@@ -158,8 +158,23 @@ class OtaClient:
 
     def _get_json(self, url: str):
         r = self._get(url)
+        status = getattr(r, "status_code", 200)
         try:
+            if status != 200:
+                body = ""
+                for attr in ("text", "content"):
+                    try:
+                        body = getattr(r, attr)
+                        if isinstance(body, bytes):
+                            body = body.decode("utf-8", "replace")
+                        break
+                    except Exception:
+                        body = ""
+                snippet = body[:100] if body else ""
+                raise OTAError(f"HTTP status {status}: {snippet}")
             return r.json()
+        except OTAError:
+            raise
         except Exception as exc:
             if self.debug:
                 self._debug("Failed to decode JSON from", url, exc)
