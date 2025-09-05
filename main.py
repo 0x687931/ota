@@ -1,21 +1,20 @@
-"""Example entry point demonstrating OTAUpdater usage."""
+"""Example entry point for the ``OtaClient``."""
 
-from ota_updater import OTAUpdater
-
-CONFIG = {
-    "ssid": "YOUR_WIFI_SSID",
-    "password": "YOUR_WIFI_PASSWORD",
-    "repo_owner": "yourname",
-    "repo_name": "yourrepo",
-    # "tag": "v1.0.0",  # optional specific release tag
-    # "token": "ghp_...",  # optional token for private repos
-}
+import json
+from ota_client import OtaClient
 
 
-def main() -> None:
-    ota = OTAUpdater(CONFIG)
+def load_config():
+    with open("ota_config.json") as f:
+        return json.load(f)
+
+
+def main():
+    cfg = load_config()
+    ota = OtaClient(cfg)
     try:
-        ota.update()
+        ota.connect()
+        ota.update_if_available()
     except Exception as exc:
         print("OTA update failed:", exc)
 

@@ -1,0 +1,16 @@
+{
+  "owner": "ORG",
+  "repo": "REPO",
+  "ssid": "WIFI",
+  "password": "SECRET",
+  "channel": "stable",
+  "branch": "main",
+  "token": null,
+  "allow": ["boot.py", "main.py", "app", "lib"],
+  "ignore": ["tests", "docs"],
+  "chunk": 1024,
+  "connect_timeout_sec": 20,
+  "http_timeout_sec": 20,
+  "retries": 3,
+  "backoff_sec": 3
+}
