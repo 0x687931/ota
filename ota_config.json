@@ -12,5 +12,6 @@
   "connect_timeout_sec": 20,
   "http_timeout_sec": 20,
   "retries": 3,
-  "backoff_sec": 3
+  "backoff_sec": 3,
+  "debug": false
 }

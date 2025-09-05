@@ -110,12 +110,17 @@ class OtaClient:
         self.cfg = cfg
         self.owner = cfg.get("owner")
         self.repo = cfg.get("repo")
+        self.debug = bool(cfg.get("debug"))
         self.stage_dir = STAGE_DIR
         self.backup_dir = BACKUP_DIR
         self.chunk = int(cfg.get("chunk", 1024))
         self.ensure_dirs(self.stage_dir)
         self.ensure_dirs(self.backup_dir)
         self._startup_cleanup()
+
+    def _debug(self, *args) -> None:
+        if self.debug:
+            print(*args)
 
     # ------------------------------------------------------------------
     # Connection helpers
@@ -146,18 +151,35 @@ class OtaClient:
         headers = self._headers()
         if raw:
             headers["Accept"] = "application/octet-stream"
-        return requests.get(url, headers=headers, stream=raw)
+        self._debug("GET", url)
+        r = requests.get(url, headers=headers, stream=raw)
+        self._debug("->", getattr(r, "status_code", "?"))
+        return r
+
+    def _get_json(self, url: str):
+        r = self._get(url)
+        try:
+            return r.json()
+        except Exception as exc:
+            if self.debug:
+                self._debug("Failed to decode JSON from", url, exc)
+                try:
+                    self._debug("Response:", r.text)
+                except Exception:
+                    try:
+                        self._debug("Response bytes:", r.content)
+                    except Exception:
+                        pass
+            raise
+        finally:
+            r.close()
 
     # ------------------------------------------------------------------
     def resolve_stable(self):
         """Return (tag, commit_sha) for the latest release."""
 
         url = "https://api.github.com/repos/%s/%s/releases/latest" % (self.owner, self.repo)
-        r = self._get(url)
-        try:
-            j = r.json()
-        finally:
-            r.close()
+        j = self._get_json(url)
         tag = j["tag_name"]
         commit = self._resolve_ref("tags/" + tag)
         return tag, commit
@@ -167,11 +189,7 @@ class OtaClient:
 
         branch = self.cfg.get("branch", "main")
         url = "https://api.github.com/repos/%s/%s/git/ref/heads/%s" % (self.owner, self.repo, branch)
-        r = self._get(url)
-        try:
-            j = r.json()
-        finally:
-            r.close()
+        j = self._get_json(url)
         obj = j["object"]
         sha = obj["sha"]
         if obj.get("type") == "tag":
@@ -182,11 +200,7 @@ class OtaClient:
         """Resolve a ref like ``tags/v1.0`` to a commit SHA."""
 
         url = "https://api.github.com/repos/%s/%s/git/ref/%s" % (self.owner, self.repo, ref_path)
-        r = self._get(url)
-        try:
-            j = r.json()
-        finally:
-            r.close()
+        j = self._get_json(url)
         obj = j["object"]
         if obj.get("type") == "commit":
             return obj["sha"]
@@ -194,11 +208,7 @@ class OtaClient:
 
     def _resolve_tag_object(self, sha: str) -> str:
         url = "https://api.github.com/repos/%s/%s/git/tags/%s" % (self.owner, self.repo, sha)
-        r = self._get(url)
-        try:
-            j = r.json()
-        finally:
-            r.close()
+        j = self._get_json(url)
         return j["object"]["sha"]
 
     # ------------------------------------------------------------------
@@ -212,11 +222,7 @@ class OtaClient:
     # ------------------------------------------------------------------
     def fetch_tree(self, commit_sha):
         url = "https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1" % (self.owner, self.repo, commit_sha)
-        r = self._get(url)
-        try:
-            j = r.json()
-        finally:
-            r.close()
+        j = self._get_json(url)
         return j["tree"]
 
     def iter_candidates(self, tree):
