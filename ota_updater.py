@@ -71,6 +71,33 @@ def crc32_file(path: str, chunk_size: int = CHUNK_SIZE) -> int:
     return crc & 0xFFFFFFFF
 
 
+def sha1_git_blob_stream(total_size: int, reader, chunk_size: int = CHUNK_SIZE) -> str:
+    """Compute Git blob SHA1 by streaming bytes from *reader*.
+
+    Parameters
+    ----------
+    total_size: int
+        Expected size of the blob in bytes.
+    reader: callable
+        Function that accepts ``chunk_size`` and yields byte chunks.
+    chunk_size: int
+        Size of chunks to request from ``reader``.
+    """
+
+    h = hashlib.sha1()
+    header = b"blob " + str(total_size).encode() + b"\x00"
+    h.update(header)
+    remaining = total_size
+    for chunk in reader(chunk_size):
+        if not chunk:
+            break
+        remaining -= len(chunk)
+        h.update(chunk)
+    if remaining != 0:
+        raise OTAError("size mismatch while hashing")
+    return h.hexdigest()
+
+
 class OTAError(Exception):
     """Custom exception for OTA update failures."""
 
@@ -179,6 +206,78 @@ class OTAUpdater:
         data = resp.json()
         resp.close()
         return data
+
+    def _resolve_commit_sha(self, tag: str) -> str:  # pragma: no cover - network not used in tests
+        owner = self.config["repo_owner"]
+        repo = self.config["repo_name"]
+        url = "https://api.github.com/repos/{}/{}/git/ref/tags/{}".format(owner, repo, tag)
+        resp = self._github_api(url)
+        if resp.status_code != 200:
+            raise OTAError("Failed to resolve tag: {}".format(resp.status_code))
+        ref = resp.json()
+        resp.close()
+        obj = ref["object"]
+        if obj["type"] == "commit":
+            return obj["sha"]
+        tag_obj = "https://api.github.com/repos/{}/{}/git/tags/{}".format(owner, repo, obj["sha"])
+        resp = self._github_api(tag_obj)
+        if resp.status_code != 200:
+            raise OTAError("Failed to resolve tag object: {}".format(resp.status_code))
+        tag_data = resp.json()
+        resp.close()
+        return tag_data["object"]["sha"]
+
+    def _fetch_tree(self, commit_sha: str):  # pragma: no cover - network not used in tests
+        owner = self.config["repo_owner"]
+        repo = self.config["repo_name"]
+        url = "https://api.github.com/repos/{}/{}/git/trees/{}?recursive=1".format(owner, repo, commit_sha)
+        resp = self._github_api(url)
+        if resp.status_code != 200:
+            raise OTAError("Failed to fetch tree: {}".format(resp.status_code))
+        tree = resp.json().get("tree", [])
+        resp.close()
+        return tree
+
+    def _allowed_path(self, path: str) -> bool:
+        allow = self.config.get("paths")
+        if not allow:
+            return True
+        for p in allow:
+            if path == p or path.startswith(p.rstrip("/") + "/"):
+                return True
+        return False
+
+    def _download_blob_to_stage(self, entry: dict):  # pragma: no cover - network not used in tests
+        path = entry["path"]
+        size = int(entry.get("size", 0))
+        blob_sha = entry["sha"]
+        dest = self._stage_path(path)
+        self._ensure_dir(os.path.dirname(dest))
+        owner = self.config["repo_owner"]
+        repo = self.config["repo_name"]
+        url = "https://api.github.com/repos/{}/{}/git/blobs/{}".format(owner, repo, blob_sha)
+        headers = self._github_headers()
+        headers["Accept"] = "application/vnd.github.raw"
+        resp = requests.get(url, headers=headers, stream=True)
+        if resp.status_code != 200:
+            raise OTAError("Download failed: {}".format(resp.status_code))
+        tmp = dest + ".tmp"
+        with open(tmp, "wb") as f:
+            def reader(n):
+                while True:
+                    block = resp.raw.read(n)
+                    if not block:
+                        break
+                    f.write(block)
+                    yield block
+            digest = sha1_git_blob_stream(size, reader, self.chunk_size)
+            f.flush()
+            if hasattr(os, "fsync"):
+                os.fsync(f.fileno())
+        resp.close()
+        if digest != blob_sha:
+            raise OTAError("hash mismatch for {}".format(path))
+        os.rename(tmp, dest)
 
     def _download_asset(self, url: str, dest: str, expected_sha: str | None, expected_crc: int | None, expected_size: int | None):  # pragma: no cover - network not used in tests
         headers = self._github_headers()
@@ -330,37 +429,50 @@ class OTAUpdater:
             if a.get("name") == "manifest.json":
                 manifest_asset = a
                 break
-        if manifest_asset is None:
-            raise OTAError("manifest.json not found in release")
-        manifest_url = manifest_asset["url"]
-        # Download manifest
-        headers = self._github_headers()
-        headers["Accept"] = "application/octet-stream"
-        resp = requests.get(manifest_url, headers=headers)
-        if resp.status_code != 200:
-            raise OTAError("manifest download failed")
-        manifest = resp.json()
-        resp.close()
+        manifest = None
+        if manifest_asset:
+            manifest_url = manifest_asset["url"]
+            headers = self._github_headers()
+            headers["Accept"] = "application/octet-stream"
+            resp = requests.get(manifest_url, headers=headers)
+            if resp.status_code != 200:
+                raise OTAError("manifest download failed")
+            manifest = resp.json()
+            resp.close()
+            version = manifest.get("version", tag)
+        else:
+            version = tag
         current_version = self._read_version()
-        if current_version == manifest.get("version"):
+        if current_version == version:
             self._log("Device already at version {}".format(current_version))
             return
-        # stage files
-        for fi in manifest.get("files", []):
-            raw_url = "https://raw.githubusercontent.com/{}/{}/{}/{}".format(
-                self.config["repo_owner"],
-                self.config["repo_name"],
-                tag,
-                fi["path"]
-            )
-            fi["url"] = raw_url
-            self._download_to_stage(fi)
-        # apply
+        if manifest_asset:
+            for fi in manifest.get("files", []):
+                raw_url = "https://raw.githubusercontent.com/{}/{}/{}/{}".format(
+                    self.config["repo_owner"],
+                    self.config["repo_name"],
+                    tag,
+                    fi["path"]
+                )
+                fi["url"] = raw_url
+                self._download_to_stage(fi)
+        else:
+            manifest = {"version": version, "files": []}
+            commit_sha = self._resolve_commit_sha(tag)
+            tree = self._fetch_tree(commit_sha)
+            for entry in tree:
+                if entry.get("type") != "blob":
+                    continue
+                if not self._allowed_path(entry["path"]):
+                    continue
+                if int(entry.get("size", 0)) == 0:
+                    continue
+                self._download_blob_to_stage(entry)
+                manifest["files"].append({"path": entry["path"]})
         self._apply_update(manifest)
-        # post update hook
         if manifest.get("post_update"):
             self._run_hook(manifest["post_update"])
-        self._log("Update to {} applied".format(manifest.get("version")))
+        self._log("Update to {} applied".format(version))
         machine.reset()
 
     def _run_hook(self, path):
