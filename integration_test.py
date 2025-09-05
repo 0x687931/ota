@@ -1,34 +1,28 @@
-"""Minimal integration test for OTAUpdater.
-
-This script simulates applying an update using a local manifest and
-staged files.  It is intended for manual execution on a development
-machine and does not perform any network operations."""
+"""Toggle update channel and perform a dry run against the configured repo."""
 
 import json
-import os
-from ota_updater import OTAUpdater, sha256_file
+from ota_client import OtaClient
+
+
+def run(channel):
+    with open("ota_config.json") as f:
+        cfg = json.load(f)
+    cfg["channel"] = channel
+    client = OtaClient(cfg)
+    # This is a dry run – in real usage ``update_if_available`` would
+    # download and apply updates.  Here we simply resolve the target to
+    # demonstrate channel selection.
+    target = client.resolve_target()
+    print("Channel %s -> %s" % (channel, target["commit"]))
 
 
 def main():
-    # prepare a staged file
-    updater = OTAUpdater({}, log=True)
-    os.makedirs(updater.stage_dir, exist_ok=True)
-    with open(os.path.join(updater.stage_dir, 'example.txt'), 'w') as f:
-        f.write('demo')
-    manifest = {
-        'version': 'v0-test',
-        'files': [{
-            'path': 'example.txt',
-            'sha256': sha256_file(os.path.join(updater.stage_dir, 'example.txt')),
-            'size': os.path.getsize(os.path.join(updater.stage_dir, 'example.txt')),
-        }]
-    }
-    # write manifest for inspection
-    with open('manifest.json', 'w') as f:
-        json.dump(manifest, f, indent=2)
-    updater._apply_update(manifest)
-    print('Update applied. Contents:', open('example.txt').read())
+    for ch in ("stable", "developer"):
+        try:
+            run(ch)
+        except Exception as exc:
+            print("Channel %s failed: %s" % (ch, exc))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
