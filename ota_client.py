@@ -94,6 +94,7 @@ class OtaClient:
         self.chunk = int(cfg.get("chunk", 1024))
         self.ensure_dirs(self.stage_dir)
         self.ensure_dirs(self.backup_dir)
+        self._startup_cleanup()
 
     # ------------------------------------------------------------------
     # Connection helpers
@@ -221,6 +222,26 @@ class OtaClient:
             base = os.path.dirname(base)
         for p in reversed(parts):
             os.mkdir(p)
+
+    def _startup_cleanup(self) -> None:
+        """Rollback from backup and clean staging on boot."""
+        if os.path.isdir(self.backup_dir) and os.listdir(self.backup_dir):
+            for root, dirs, files in self._walk(self.backup_dir):
+                for name in files:
+                    bpath = os.path.join(root, name)
+                    rel = bpath[len(self.backup_dir) + 1 :]
+                    target = rel
+                    self.ensure_dirs(target)
+                    if os.path.exists(target):
+                        os.remove(target)
+                    os.rename(bpath, target)
+            self._rmtree(self.backup_dir)
+        if os.path.isdir(self.stage_dir) and os.listdir(self.stage_dir):
+            self._rmtree(self.stage_dir)
+        if not os.path.isdir(self.stage_dir):
+            os.mkdir(self.stage_dir)
+        if not os.path.isdir(self.backup_dir):
+            os.mkdir(self.backup_dir)
 
     def stream_and_verify(self, entry, ref):
         """Download ``entry`` at ``ref`` to the staging directory."""
