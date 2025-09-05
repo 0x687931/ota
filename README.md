@@ -31,6 +31,12 @@ cryptographic hashes and swaps files atomically with rollback support.
 4. Upload the manifest and files as release assets.  The updater can then
    fetch the latest release or a specific tag when `CONFIG['tag']` is set.
 
+   If you prefer to avoid attaching a manifest, omit `manifest.json` from
+   the release and the updater will derive file paths from the Git tree at
+   the tag.  Each file is verified against its Git blob SHA before being
+   staged.  Set `CONFIG['paths']` to a list of directories or files to
+   restrict which parts of the repository are updated.
+
 ## Testing
 
 The repository includes unit tests that exercise hash verification,
