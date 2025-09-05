@@ -8,8 +8,6 @@ Usage:
     python manifest_gen.py --version v1.2.3 file1.py lib/module.py ...
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
@@ -19,7 +17,7 @@ import hmac
 CHUNK_SIZE = 1024
 
 
-def sha256(path: str) -> str:
+def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
         while True:
@@ -30,7 +28,7 @@ def sha256(path: str) -> str:
     return h.hexdigest()
 
 
-def build_manifest(version: str, files: list[str], post_update: str | None, rollback: str | None) -> dict:
+def build_manifest(version, files, post_update=None, rollback=None):
     manifest = {"version": version, "files": []}
     for path in files:
         info = {
@@ -46,7 +44,7 @@ def build_manifest(version: str, files: list[str], post_update: str | None, roll
     return manifest
 
 
-def main() -> None:
+def main():
     parser = argparse.ArgumentParser(description="Generate OTA manifest")
     parser.add_argument("files", nargs="+", help="files to include")
     parser.add_argument("--version", required=True, help="release version")
