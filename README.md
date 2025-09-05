@@ -40,6 +40,13 @@ staged before an atomic swap with rollback support.
    staged.  Set `CONFIG['paths']` to a list of directories or files to
    restrict which parts of the repository are updated.
 
+## Compatibility
+
+The modules expose a ``MICROPYTHON`` flag based on ``sys.implementation.name``
+to detect when running under MicroPython and fall back to lightweight stubs on
+CPython.  The codebase has been verified on MicroPython v1.26.0 (2025-08-09)
+running on a Raspberry Pi Pico W with an RP2040.
+
 ## Testing
 
 The repository includes unit tests that exercise hash verification,

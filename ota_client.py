@@ -13,39 +13,34 @@ network operations are concentrated in the private ``_get`` method to make
 unit testing easy by monkeypatching.
 """
 
-from __future__ import annotations
+import json
+import os
+import sys
+from time import sleep
 
-try:  # uhashlib on device, hashlib on host
+# Detect if running under MicroPython
+MICROPYTHON = sys.implementation.name == "micropython"
+
+if MICROPYTHON:
     import uhashlib as hashlib  # type: ignore
-except Exception:  # pragma: no cover
+    import urequests as requests  # type: ignore
+    import network  # type: ignore
+    import machine  # type: ignore
+else:  # pragma: no cover - running under CPython tests
     import hashlib  # type: ignore
 
-try:  # urequests on device
-    import urequests as requests  # type: ignore
-except Exception:  # pragma: no cover - network not used during tests
     class _NoRequests:  # minimal stub
         def get(self, *a, **k):  # pragma: no cover
             raise RuntimeError("urequests not available")
 
     requests = _NoRequests()  # type: ignore
-
-try:  # network interface on device
-    import network  # type: ignore
-except Exception:  # pragma: no cover - running under CPython tests
     network = None  # type: ignore
 
-try:  # machine.reset on device
-    import machine  # type: ignore
-except Exception:  # pragma: no cover - running under CPython tests
     class _Machine:
         def reset(self):  # pragma: no cover - not used in tests
             pass
 
     machine = _Machine()  # type: ignore
-
-import json
-import os
-from time import sleep
 
 
 VERSION_FILE = "version.json"

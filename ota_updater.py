@@ -11,34 +11,34 @@ The implementation avoids loading large responses in memory and aims
 for compatibility with both CPython (for testing) and MicroPython.
 """
 
-from __future__ import annotations
-
 import binascii
 import json
 import os
 import hashlib
 import hmac
+import sys
 from time import sleep
 
-try:  # MicroPython's network module
+# Detect if running under MicroPython
+MICROPYTHON = sys.implementation.name == "micropython"
+
+if MICROPYTHON:
     import network  # type: ignore
-except Exception:  # pragma: no cover - running under CPython tests
+    import urequests as requests  # type: ignore
+    import machine  # type: ignore
+else:  # pragma: no cover - running under CPython tests
     network = None  # type: ignore
 
-try:  # urequests on device, fall back to a stub for tests
-    import urequests as requests  # type: ignore
-except Exception:  # pragma: no cover - running under CPython tests
     class _NoRequests:
         def get(self, *a, **k):  # pragma: no cover - not used in tests
             raise RuntimeError("urequests not available")
+
     requests = _NoRequests()  # type: ignore
 
-try:  # machine.reset on device
-    import machine  # type: ignore
-except Exception:  # pragma: no cover - running under CPython tests
     class _Machine:
         def reset(self):  # pragma: no cover - not used in tests
             pass
+
     machine = _Machine()  # type: ignore
 
 
@@ -166,7 +166,7 @@ class OTAUpdater:
 
     # ------------------------------------------------------------------
     # Version management
-    def _read_version(self) -> str | None:
+    def _read_version(self):
         try:
             with open(VERSION_FILE) as f:
                 return json.load(f)["version"]
@@ -312,7 +312,7 @@ class OTAUpdater:
             raise OTAError("hash mismatch for {}".format(path))
         os.rename(tmp, dest)
 
-    def _download_asset(self, url: str, dest: str, expected_sha: str | None, expected_crc: int | None, expected_size: int | None):  # pragma: no cover - network not used in tests
+    def _download_asset(self, url: str, dest: str, expected_sha=None, expected_crc=None, expected_size=None):  # pragma: no cover - network not used in tests
         headers = self._github_headers()
         headers["Accept"] = "application/octet-stream"
         resp = requests.get(url, headers=headers, stream=True)
@@ -352,7 +352,7 @@ class OTAUpdater:
     def _backup_path(self, path: str) -> str:
         return "{}/{}".format(self.backup_dir, path)
 
-    def _verify_file(self, path: str, sha: str | None, size: int | None, crc: int | None = None) -> None:
+    def _verify_file(self, path: str, sha=None, size=None, crc=None) -> None:
         """Verify file at *path* against expected values."""
         st = os.stat(path)
         if size is not None and st.st_size != size:
