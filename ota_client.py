@@ -145,6 +145,8 @@ class OtaClient:
         token = self.cfg.get("token")
         if token:
             h["Authorization"] = "token {}".format(token)
+        # Identify the client to the API; allow customization via config
+        h["User-Agent"] = self.cfg.get("user_agent", "ota-updater")
         return h
 
     def _get(self, url: str, raw: bool = False):  # pragma: no cover - overridden in tests
