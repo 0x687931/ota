@@ -60,9 +60,12 @@ staged before an atomic swap with rollback support.
      "connect_timeout_sec": 20,
      "http_timeout_sec": 20,
      "retries": 3,
-     "backoff_sec": 3
+     "backoff_sec": 3,
+     "debug": false
    }
    ```
+
+   Set `debug` to `true` to enable verbose logging for troubleshooting.
 
 3. Copy `ota_client.py`, `main.py` and the config file to the root of the Pico.
 4. Run the updater from the REPL:
