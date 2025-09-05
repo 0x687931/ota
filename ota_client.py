@@ -21,6 +21,37 @@ from time import sleep
 # Detect if running under MicroPython
 MICROPYTHON = sys.implementation.name == "micropython"
 
+if MICROPYTHON and not hasattr(os, "path"):
+    def _dirname(p):
+        return p.rpartition("/")[0]
+
+    def _isdir(p):
+        try:
+            return (os.stat(p)[0] & 0x4000) != 0
+        except OSError:
+            return False
+
+    def _join(a, b):
+        return a.rstrip("/") + "/" + b if a else b
+
+    def _exists(p):
+        try:
+            os.stat(p)
+            return True
+        except OSError:
+            return False
+
+    os.path = type(
+        "path",
+        (),
+        {
+            "dirname": _dirname,
+            "isdir": _isdir,
+            "join": _join,
+            "exists": _exists,
+        },
+    )
+
 if MICROPYTHON:
     import uhashlib as hashlib  # type: ignore
     import urequests as requests  # type: ignore
