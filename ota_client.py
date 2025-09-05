@@ -20,37 +20,32 @@ from time import sleep
 
 # Detect if running under MicroPython
 MICROPYTHON = sys.implementation.name == "micropython"
+try:
+    path = os.path  # CPython
+except AttributeError:  # MicroPython
+    class path:
+        @staticmethod
+        def dirname(p):
+            return p.rpartition("/")[0]
 
-if MICROPYTHON and not hasattr(os, "path"):
-    def _dirname(p):
-        return p.rpartition("/")[0]
+        @staticmethod
+        def isdir(p):
+            try:
+                return (os.stat(p)[0] & 0x4000) != 0
+            except OSError:
+                return False
 
-    def _isdir(p):
-        try:
-            return (os.stat(p)[0] & 0x4000) != 0
-        except OSError:
-            return False
+        @staticmethod
+        def join(a, b):
+            return a.rstrip("/") + "/" + b if a else b
 
-    def _join(a, b):
-        return a.rstrip("/") + "/" + b if a else b
-
-    def _exists(p):
-        try:
-            os.stat(p)
-            return True
-        except OSError:
-            return False
-
-    os.path = type(
-        "path",
-        (),
-        {
-            "dirname": _dirname,
-            "isdir": _isdir,
-            "join": _join,
-            "exists": _exists,
-        },
-    )
+        @staticmethod
+        def exists(p):
+            try:
+                os.stat(p)
+                return True
+            except OSError:
+                return False
 
 if MICROPYTHON:
     import uhashlib as hashlib  # type: ignore
@@ -238,35 +233,35 @@ class OtaClient:
             yield entry
 
     # ------------------------------------------------------------------
-    def ensure_dirs(self, path: str) -> None:
-        base = os.path.dirname(path)
+    def ensure_dirs(self, path_: str) -> None:
+        base = path.dirname(path_)
         if not base:
             return
         parts = []
-        while base and not os.path.isdir(base):
+        while base and not path.isdir(base):
             parts.append(base)
-            base = os.path.dirname(base)
+            base = path.dirname(base)
         for p in reversed(parts):
             os.mkdir(p)
 
     def _startup_cleanup(self) -> None:
         """Rollback from backup and clean staging on boot."""
-        if os.path.isdir(self.backup_dir) and os.listdir(self.backup_dir):
+        if path.isdir(self.backup_dir) and os.listdir(self.backup_dir):
             for root, dirs, files in self._walk(self.backup_dir):
                 for name in files:
-                    bpath = os.path.join(root, name)
+                    bpath = path.join(root, name)
                     rel = bpath[len(self.backup_dir) + 1 :]
                     target = rel
                     self.ensure_dirs(target)
-                    if os.path.exists(target):
+                    if path.exists(target):
                         os.remove(target)
                     os.rename(bpath, target)
             self._rmtree(self.backup_dir)
-        if os.path.isdir(self.stage_dir) and os.listdir(self.stage_dir):
+        if path.isdir(self.stage_dir) and os.listdir(self.stage_dir):
             self._rmtree(self.stage_dir)
-        if not os.path.isdir(self.stage_dir):
+        if not path.isdir(self.stage_dir):
             os.mkdir(self.stage_dir)
-        if not os.path.isdir(self.backup_dir):
+        if not path.isdir(self.backup_dir):
             os.mkdir(self.backup_dir)
 
     def stream_and_verify(self, entry, ref):
@@ -312,13 +307,13 @@ class OtaClient:
         try:
             for root, dirs, files in self._walk(self.stage_dir):
                 for name in files:
-                    stage_path = os.path.join(root, name)
+                    stage_path = path.join(root, name)
                     rel = stage_path[len(self.stage_dir) + 1 :]
                     target = rel
-                    backup = os.path.join(self.backup_dir, rel)
+                    backup = path.join(self.backup_dir, rel)
                     self.ensure_dirs(backup)
                     self.ensure_dirs(target)
-                    if os.path.exists(target):
+                    if path.exists(target):
                         os.rename(target, backup)
                     os.rename(stage_path, target)
                     applied.append((target, backup))
@@ -326,8 +321,8 @@ class OtaClient:
         except Exception:
             for target, backup in reversed(applied):
                 try:
-                    if os.path.exists(backup):
-                        if os.path.exists(target):
+                    if path.exists(backup):
+                        if path.exists(target):
                             os.remove(target)
                         os.rename(backup, target)
                 except Exception:
@@ -376,33 +371,33 @@ class OtaClient:
         dirs = []
         files = []
         for name in os.listdir(base):
-            path = os.path.join(base, name)
-            if os.path.isdir(path):
+            p = path.join(base, name)
+            if path.isdir(p):
                 dirs.append(name)
             else:
                 files.append(name)
         yield base, dirs, files
         for d in dirs:
-            for x in self._walk(os.path.join(base, d)):
+            for x in self._walk(path.join(base, d)):
                 yield x
 
-    def _rmtree(self, path):
-        if not os.path.exists(path):
+    def _rmtree(self, path_):
+        if not path.exists(path_):
             return
-        for root, dirs, files in self._walk(path):
+        for root, dirs, files in self._walk(path_):
             for f in files:
                 try:
-                    os.remove(os.path.join(root, f))
+                    os.remove(path.join(root, f))
                 except OSError:
                     pass
             for d in dirs:
                 try:
-                    os.rmdir(os.path.join(root, d))
+                    os.rmdir(path.join(root, d))
                 except OSError:
                     pass
         try:
-            if path not in ("", "."):
-                os.rmdir(path)
+            if path_ not in ("", "."):
+                os.rmdir(path_)
         except OSError:
             pass
 
