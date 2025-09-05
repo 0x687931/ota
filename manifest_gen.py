@@ -14,6 +14,7 @@ import argparse
 import hashlib
 import json
 import os
+import hmac
 
 CHUNK_SIZE = 1024
 
@@ -51,9 +52,14 @@ def main() -> None:
     parser.add_argument("--version", required=True, help="release version")
     parser.add_argument("--post-update", dest="post_update", help="post update hook script")
     parser.add_argument("--rollback", dest="rollback", help="rollback hook script")
+    parser.add_argument("--key", help="HMAC key for signing the manifest")
     parser.add_argument("-o", "--output", default="manifest.json")
     args = parser.parse_args()
     manifest = build_manifest(args.version, args.files, args.post_update, args.rollback)
+    if args.key:
+        data = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+        sig = hmac.new(args.key.encode(), data, hashlib.sha256).hexdigest()
+        manifest["signature"] = sig
     with open(args.output, "w") as f:
         json.dump(manifest, f, indent=2)
     print("wrote", args.output)

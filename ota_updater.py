@@ -17,6 +17,7 @@ import binascii
 import json
 import os
 import hashlib
+import hmac
 from time import sleep
 
 try:  # MicroPython's network module
@@ -128,6 +129,7 @@ class OTAUpdater:
         self.backup_dir = BACKUP_DIR
         self._ensure_dir(self.stage_dir)
         self._ensure_dir(self.backup_dir)
+        self._startup_check()
 
     # ------------------------------------------------------------------
     # Utility helpers
@@ -144,6 +146,23 @@ class OTAUpdater:
             path = os.path.dirname(path)
         for p in reversed(parts):
             os.mkdir(p)
+
+    @staticmethod
+    def _dir_empty(path: str) -> bool:
+        try:
+            return not os.listdir(path)
+        except OSError:
+            return True
+
+    def _startup_check(self) -> None:
+        """Rollback or cleanup if previous update left state behind."""
+        if not self._dir_empty(self.backup_dir):
+            self._log("incomplete update detected; rolling back")
+            self.rollback()
+            self._cleanup_stage()
+        elif not self._dir_empty(self.stage_dir):
+            self._log("cleaning leftover staging files")
+            self._cleanup_stage()
 
     # ------------------------------------------------------------------
     # Version management
@@ -162,6 +181,20 @@ class OTAUpdater:
             if hasattr(os, "fsync"):
                 os.fsync(f.fileno())
         os.rename(tmp, VERSION_FILE)
+
+    def _verify_manifest_signature(self, manifest: dict) -> None:
+        key = self.config.get("manifest_key")
+        if not key:
+            return
+        sig = manifest.get("signature")
+        if not sig:
+            raise OTAError("manifest missing signature")
+        tmp = manifest.copy()
+        tmp.pop("signature", None)
+        data = json.dumps(tmp, sort_keys=True, separators=(",", ":")).encode()
+        expected = hmac.new(key.encode(), data, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, sig):
+            raise OTAError("manifest signature mismatch")
 
     # ------------------------------------------------------------------
     # Wi-Fi and GitHub interaction
@@ -439,6 +472,7 @@ class OTAUpdater:
                 raise OTAError("manifest download failed")
             manifest = resp.json()
             resp.close()
+            self._verify_manifest_signature(manifest)
             version = manifest.get("version", tag)
         else:
             version = tag
