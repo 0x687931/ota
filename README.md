@@ -40,6 +40,42 @@ staged before an atomic swap with rollback support.
    staged.  Set `CONFIG['paths']` to a list of directories or files to
    restrict which parts of the repository are updated.
 
+### Minimal test update on a Pico W
+
+1. Fork this repository on GitHub so the device can access `README.md`.
+2. Create `ota_config.json` on the Pico with values similar to:
+
+   ```json
+   {
+     "owner": "YOUR_GITHUB_USERNAME",
+     "repo": "ota",
+     "ssid": "YOUR_WIFI_SSID",
+     "password": "YOUR_WIFI_PASSWORD",
+     "channel": "developer",
+     "branch": "main",
+     "token": null,
+     "allow": ["README.md"],
+     "ignore": [],
+     "chunk": 512,
+     "connect_timeout_sec": 20,
+     "http_timeout_sec": 20,
+     "retries": 3,
+     "backoff_sec": 3
+   }
+   ```
+
+3. Copy `ota_client.py`, `main.py` and the config file to the root of the Pico.
+4. Run the updater from the REPL:
+
+   ```python
+   import main
+   main.main()
+   ```
+
+   The client downloads `README.md`, verifies its SHA1 and reboots into the
+   updated filesystem.  Editing `README.md` on GitHub and rerunning will fetch
+   the new revision.
+
 ## Compatibility
 
 The modules expose a ``MICROPYTHON`` flag based on ``sys.implementation.name``
