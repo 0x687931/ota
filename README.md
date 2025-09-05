@@ -1,53 +1,62 @@
-# MicroPython Over-the-Air updater
+# MicroPython OTA Updater
 
-This library enables you to update your MicroPython projects over the air, at start-up, or whenever you choose.
+Robust over‑the‑air (OTA) update system for MicroPython devices.  The updater
+pulls application bundles from GitHub releases, verifies integrity with
+cryptographic hashes and swaps files atomically with rollback support.
 
----
+## Features
 
-To use this code:
+* Fetch latest or specific GitHub release tag
+* Works with public and private repositories (token optional)
+* Manifest driven updates describing files, sizes and hashes
+* SHA256 verification (CRC32 fallback)
+* Streamed downloads to a staging directory and atomic swap
+* Rollback on failure and version tracking
+* Minimal memory usage and concise logging
 
-1. Add the `ota.py` to your MicroPython device
+## Usage
 
-1. Create a file named `WIFI_CONFIG.py` on your MicroPython device, which contains two variables: `SSID` and `PASSWORD`:
+1. Copy `ota_updater.py` and `main.py` to the device.
+2. Edit the `CONFIG` dictionary in `main.py` with Wi‑Fi credentials and
+   GitHub repository information.  For private repositories provide a
+   personal access token.
+3. Build a release on GitHub that contains an asset named `manifest.json`
+   describing the files in the release.  Use `manifest_gen.py` on the
+   development machine to create the manifest:
 
-    ```python
-    SSID = "my wifi hotspot name"
-    PASSWORD = "wifi password"
-    ```
+   ```bash
+   python manifest_gen.py --version v1.0.0 boot.py main.py lib/util.py
+   ```
 
-1. Add this to your main program code:
+4. Upload the manifest and files as release assets.  The updater can then
+   fetch the latest release or a specific tag when `CONFIG['tag']` is set.
 
-    ```python
-    from ota import OTAUpdater
-    from WIFI_CONFIG import SSID, PASSWORD
+## Testing
 
-    firmware_url = "https://raw.githubusercontent.com/<username>/<repo_name>/<branch_name>"
+The repository includes unit tests that exercise hash verification,
+file staging and rollback logic.  Run the tests on a development
+machine with Python 3:
 
-    ```
+```bash
+pytest
+```
 
-    where `<username>` is your github username, `<repo_name>` is the name of the repository to check for updates and `<branch_name>` is the name of the branch to monitor.
+## Security Notes
 
-1. Add this to your main program code:
+* The GitHub token for private repositories should be stored in a small
+  configuration file or passed at runtime.  On MicroPython devices
+  secrets are stored in plain text – protect physical access to the device.
+* TLS certificate validation may be limited on some boards.  When using
+  `urequests`, ensure the firmware supports HTTPS or provide a CA bundle
+  if necessary.
 
-    ```python
-    ota_updater = OTAUpdater(SSID, PASSWORD, firmware_url, "test.py")
-    ota_updater.download_and_install_update_if_available()
+## Integration
 
-    ```
-1. On your GitHub repository, add a `version.json` file, and add a `version` element to the JSON file, with a version number:
+After a successful update the device writes the new version to
+`version.json` and issues `machine.reset()` to boot into the new code.
+The manifest may include optional `post_update` and `rollback` hook
+scripts for custom actions.
 
-    ```json
-    {
-      "version":3
-    }
-    ```
+## License
 
----
-
-The `OTAUpdater` will connect to github over wifi using your provided wifi credentials, check what the most up-to-date version of the firmware is, compare this to a local file present on the device named `version.json`, which contains the version number of the current on device firmware.
-
-If the local file is not present it will create one with a version number of `0`. If the Github version is newer, it will download the latest file and overwrite the file on the device with the same name, then restart the MicroPython board.
-
----
-
-If you find this useful, please let me know on our discord server: <https://www.kevsrobots.com/discord>
+MIT License
