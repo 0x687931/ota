@@ -856,7 +856,12 @@ class OTA:
         self._verify_manifest_signature(manifest)
         current = self._read_state()
         version = manifest.get("version", tag)
-        if current and current.get("ref") == version and current.get("commit") == commit:
+        if (
+            not self.cfg.get("force")
+            and current
+            and current.get("ref") == version
+            and current.get("commit") == commit
+        ):
             return {"updated": False}
         for fi in manifest.get("files", []):
             rel = fi["path"]
@@ -910,7 +915,7 @@ class OTA:
                 self._debug("No update required")
                 print("No update required")
                 return False
-        if state and state.get("commit") == target["commit"]:
+        if not self.cfg.get("force") and state and state.get("commit") == target["commit"]:
             self._debug("No update required")
             print("No update required")
             return False
