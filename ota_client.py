@@ -94,8 +94,11 @@ def git_blob_sha1_stream(total_size, reader, chunk):
 
 def http_reader(resp):
     def _yield(n):
+        source = getattr(resp, "raw", None)
+        if source is None or not hasattr(source, "read"):
+            source = resp
         while True:
-            b = resp.read(n)
+            b = source.read(n)
             if not b:
                 break
             yield b
