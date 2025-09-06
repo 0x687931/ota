@@ -45,5 +45,6 @@ def test_get_uses_single_timeout_on_micropython(monkeypatch):
         }
     )
     client._get("http://example.com")
-    assert dummy.timeout == 2
+    assert not isinstance(dummy.timeout, tuple)
+    assert dummy.timeout == max(1, 2)
 
