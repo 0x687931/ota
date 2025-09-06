@@ -44,7 +44,17 @@ def main():
     ap.add_argument("--key", default=os.environ.get("MANIFEST_KEY"), help="shared secret for signature")
     ap.add_argument("--file-list", default=None, help="text file with one path per line")
     ap.add_argument("--include", nargs="*", default=None, help="explicit file globs")
-    ap.add_argument("--exclude", nargs="*", default=[".git*", ".ota_*", "__pycache__", "*.pyc", "*.pyo"])
+    ap.add_argument(
+        "--exclude",
+        nargs="*",
+        default=[
+            ".git*",  # ignore files like .gitignore; nested dirs handled separately
+            ".ota_*",
+            "__pycache__",
+            "*.pyc",
+            "*.pyo",
+        ],
+    )
     ap.add_argument("--deletes", default=None, help="text file of paths to delete")
     ap.add_argument("--post-update", default=None, help="module path to import after apply, eg hooks/post.py")
     args = ap.parse_args()
@@ -70,6 +80,8 @@ def main():
     # apply excludes
     def excluded(p: Path) -> bool:
         rel = norm(p, root)
+        if ".git" in Path(rel).parts:  # fully ignore repository metadata
+            return True
         for pat in args.exclude or []:
             if Path(rel).match(pat):
                 return True
