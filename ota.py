@@ -659,9 +659,14 @@ class OTA:
 
     def _perform_reset(self):
         mode = self.cfg.get("reset_mode", "hard")
+        if mode == "none":
+            self._debug("Not resetting device")
+            return
         if mode == "soft" and hasattr(machine, "soft_reset"):
+            self._debug("Performing soft reset...")
             machine.soft_reset()
-        elif mode == "hard":
+        else:
+            self._debug("Performing hard reset...")
             machine.reset()
 
     # --------------------------------------------------------
@@ -757,7 +762,6 @@ class OTA:
             res = self._stable_with_manifest(target["release_json"], target["ref"])
             if res is not None:
                 if res.get("updated"):
-                    self._debug("Resetting device")
                     self._perform_reset()
                     return True
                 print("No update required")
@@ -779,7 +783,6 @@ class OTA:
         for entry in candidates:
             self.stream_and_verify_git(entry, ref_for_download)
         self.stage_and_swap(target["ref"])
-        self._debug("Resetting device")
         self._perform_reset()
         return True
 
