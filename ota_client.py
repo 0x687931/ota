@@ -193,10 +193,11 @@ class OtaClient:
         read_timeout = self.cfg.get("http_timeout_sec")
         timeout = None
         if connect_timeout is not None and read_timeout is not None:
-            if MICROPYTHON:
-                timeout = max(connect_timeout, read_timeout)
-            else:
-                timeout = (connect_timeout, read_timeout)
+            timeout = (
+                max(connect_timeout, read_timeout)
+                if MICROPYTHON
+                else (connect_timeout, read_timeout)
+            )
         elif connect_timeout is not None:
             timeout = connect_timeout
         elif read_timeout is not None:
