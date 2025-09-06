@@ -19,9 +19,12 @@ staged before an atomic swap with rollback support.
 ## Usage
 
 1. Copy `ota.py` and `main.py` to the device.
-2. Provide configuration in `ota_config.json` (an example is included).
-   Set ``channel`` to ``stable`` to pull the latest GitHub release or to
-   ``developer`` to use the tip of ``branch``.
+2. Provide configuration in `ota_config.json` (default), `ota_config.yaml`
+   / `ota_config.yml`, or `ota_config.toml`.  The loader inspects the file
+   extension to parse JSON, YAML or TOML.  YAML parsing requires the optional
+   [PyYAML](https://pyyaml.org/) dependency; TOML uses Python's built‑in
+   `tomllib` (3.11+).  Set ``channel`` to ``stable`` to pull the latest
+   GitHub release or to ``developer`` to use the tip of ``branch``.
 3. For manifest based updates build a release that contains an asset named
    `manifest.json`.  For manifestless mode the client derives the file list
    directly from the Git tree at the chosen ref.  Use `manifest_gen.py` on
@@ -64,6 +67,46 @@ staged before an atomic swap with rollback support.
      "reset_mode": "hard",
      "debug": false
    }
+   ```
+
+   Equivalent YAML:
+
+   ```yaml
+   owner: YOUR_GITHUB_USERNAME
+   repo: ota
+   ssid: YOUR_WIFI_SSID
+   password: YOUR_WIFI_PASSWORD
+   channel: developer
+   branch: main
+   allow: [README.md]
+   ignore: []
+   chunk: 512
+   connect_timeout_sec: 20
+   http_timeout_sec: 20
+   retries: 3
+   backoff_sec: 3
+   reset_mode: hard
+   debug: false
+   ```
+
+   Equivalent TOML:
+
+   ```toml
+   owner = "YOUR_GITHUB_USERNAME"
+   repo = "ota"
+   ssid = "YOUR_WIFI_SSID"
+   password = "YOUR_WIFI_PASSWORD"
+   channel = "developer"
+   branch = "main"
+   allow = ["README.md"]
+   ignore = []
+   chunk = 512
+   connect_timeout_sec = 20
+   http_timeout_sec = 20
+   retries = 3
+   backoff_sec = 3
+   reset_mode = "hard"
+   debug = false
    ```
 
    Set `debug` to `true` to enable verbose logging for troubleshooting.
