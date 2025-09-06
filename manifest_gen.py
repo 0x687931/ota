@@ -3,6 +3,17 @@
 import argparse, binascii, hashlib, hmac, io, json, os, time
 from pathlib import Path
 
+INCLUDE = ["ota.py", "main.py"]  # add folders with a trailing slash like "lib/"
+
+
+def want(path: str) -> bool:
+    # allow only explicit include
+    for inc in INCLUDE:
+        if path == inc or path.startswith(inc.rstrip("/") + "/"):
+            return True
+    return False
+
+
 def sha256_crc32(path, chunk=1024 * 256):
     h = hashlib.sha256()
     crc = 0
@@ -93,13 +104,19 @@ def main():
         if excluded(p):
             continue
         rel = norm(p, root)
+        if not want(rel):
+            continue
         size = p.stat().st_size
         sha, crc = sha256_crc32(p)
         files.append({"path": rel, "size": size, "sha256": sha, "crc32": crc})
 
     deletes = None
     if args.deletes:
-        deletes = [ln.strip() for ln in Path(args.deletes).read_text().splitlines() if ln.strip() and not ln.startswith("#")]
+        deletes = [
+            ln.strip()
+            for ln in Path(args.deletes).read_text().splitlines()
+            if ln.strip() and not ln.startswith("#") and want(ln.strip())
+        ]
 
     manifest = build_manifest(args.version, files, deletes, args.post_update, args.key)
 
