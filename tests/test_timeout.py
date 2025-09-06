@@ -31,3 +31,19 @@ def test_get_uses_configured_timeouts(monkeypatch):
     client._get("http://example.com")
     assert dummy.timeout == (1, 2)
 
+
+def test_get_uses_single_timeout_on_micropython(monkeypatch):
+    dummy = DummyRequests()
+    monkeypatch.setattr("ota_client.requests", dummy)
+    monkeypatch.setattr("ota_client.MICROPYTHON", True)
+    client = OtaClient(
+        {
+            "owner": "o",
+            "repo": "r",
+            "connect_timeout_sec": 1,
+            "http_timeout_sec": 2,
+        }
+    )
+    client._get("http://example.com")
+    assert dummy.timeout == 2
+
