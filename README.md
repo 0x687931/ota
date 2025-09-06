@@ -53,7 +53,7 @@ staged before an atomic swap with rollback support.
      "password": "YOUR_WIFI_PASSWORD",
      "channel": "developer",
      "branch": "main",
-     "token": null,
+     "token": "",
      "allow": ["README.md"],
      "ignore": [],
      "chunk": 512,
@@ -66,6 +66,25 @@ staged before an atomic swap with rollback support.
    ```
 
    Set `debug` to `true` to enable verbose logging for troubleshooting.
+
+   The configuration fields are:
+
+   - `owner` (string) – GitHub username.
+   - `repo` (string) – repository name.
+   - `ssid` (string) – Wi‑Fi network name.
+   - `password` (string) – Wi‑Fi password.
+   - `channel` (string) – `stable` for releases or `developer` for branch tip.
+   - `branch` (string) – development branch when using the `developer` channel.
+   - `token` (string) – GitHub API token; use an empty string (`""`) for public repositories.
+   - `allow` (list of strings) – whitelist of paths to update.
+   - `ignore` (list of strings) – paths to skip during updates.
+   - `chunk` (integer) – download buffer size in bytes.
+   - `connect_timeout_sec` / `http_timeout_sec` (integer) – network timeout values.
+   - `retries` (integer) – number of retry attempts.
+   - `backoff_sec` (integer) – delay between retries in seconds.
+   - `debug` (boolean) – set to `true` for verbose logging.
+
+   Booleans must use lowercase `true` or `false` without quotes.
 
 3. Copy `ota_client.py`, `main.py` and the config file to the root of the Pico.
 4. Run the updater from the REPL:
