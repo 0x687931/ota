@@ -110,6 +110,17 @@ class OtaClient:
         self.cfg = cfg
         self.owner = cfg.get("owner")
         self.repo = cfg.get("repo")
+        placeholders = {"YOUR_GITHUB_USERNAME", "YOUR_REPO_NAME"}
+        owner_upper = str(self.owner or "").strip().upper()
+        repo_upper = str(self.repo or "").strip().upper()
+        if not owner_upper or owner_upper in placeholders:
+            raise ValueError(
+                "Configuration 'owner' must be set to a valid GitHub username"
+            )
+        if not repo_upper or repo_upper in placeholders:
+            raise ValueError(
+                "Configuration 'repo' must be set to a valid repository name"
+            )
         self.debug = bool(cfg.get("debug"))
         self.stage_dir = STAGE_DIR
         self.backup_dir = BACKUP_DIR
