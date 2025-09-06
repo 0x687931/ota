@@ -614,10 +614,20 @@ class OTA:
     # --------------------------------------------------------
     # Streaming and staging
 
+    def _normalize_path(self, rel):
+        if rel.startswith("/"):
+            raise OTAError("invalid path: " + rel)
+        parts = rel.split("/")
+        if any(p in ("", ".", "..") for p in parts):
+            raise OTAError("invalid path: " + rel)
+        return "/".join(parts)
+
     def _stage_path(self, rel):
+        rel = self._normalize_path(rel)
         return self.stage + "/" + rel
 
     def _backup_path(self, rel):
+        rel = self._normalize_path(rel)
         return self.backup + "/" + rel
 
     def stream_and_verify_git(self, entry, ref):
@@ -903,7 +913,7 @@ class OTA:
         ):
             return {"updated": False}
         for fi in manifest.get("files", []):
-            rel = fi["path"]
+            rel = self._normalize_path(fi["path"])
             if not self._is_permitted(rel):
                 continue
             raw_url = "https://raw.githubusercontent.com/%s/%s/%s/%s" % (
@@ -926,7 +936,11 @@ class OTA:
                 if crc32_file(dest, self.chunk) != int(fi["crc32"]):
                     raise OTAError("crc32 mismatch after write for " + rel)
             self._debug("Hash OK for", rel)
-        deletes = [d for d in manifest.get("deletes", []) if self._is_permitted(d)]
+        deletes = []
+        for d in manifest.get("deletes", []):
+            d = self._normalize_path(d)
+            if self._is_permitted(d):
+                deletes.append(d)
         self.stage_and_swap(version, commit, deletes=deletes)
         hook = manifest.get("post_update")
         if hook:
