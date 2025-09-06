@@ -42,8 +42,10 @@ staged before an atomic swap with rollback support.
    If you prefer to avoid attaching a manifest, omit `manifest.json` from
    the release and the updater will derive file paths from the Git tree at
    the tag.  Each file is verified against its Git blob SHA before being
-   staged.  Set `CONFIG['paths']` to a list of directories or files to
-   restrict which parts of the repository are updated.
+   staged.  Use the `allow` and `ignore` lists in the configuration to
+   control which files are downloaded.  Entries may be exact file names
+   like `ota.py` or directory prefixes such as `lib/`; `ignore` rules use
+   the same matching logic and take priority over `allow`.
 
 ### Minimal test update on a Pico W
 
@@ -143,7 +145,17 @@ staged before an atomic swap with rollback support.
     soft reset when supported, or `none` to disable automatic resets.
   - `debug` (boolean, optional) – set to `true` for verbose logging.
 
-   Booleans must use lowercase `true` or `false` without quotes.
+
+### Path filtering
+
+The updater applies `allow` and `ignore` rules to every file considered
+for download.  Each rule may be an exact file (e.g. `main.py`) or a
+directory prefix (`lib/` or `lib`).  `ignore` entries take precedence
+over `allow`.  When `allow` is empty all files are permitted unless
+ignored.  Manifest files and delete instructions are subject to the same
+checks, and paths containing `..` or starting with `/` are rejected.
+
+Booleans must use lowercase `true` or `false` without quotes.
 
 3. Copy `ota.py`, `main.py` and the config file to the root of the Pico.
 4. Run the updater from the REPL:
