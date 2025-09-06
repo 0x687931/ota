@@ -103,6 +103,30 @@ def http_reader(resp):
     return _yield
 
 
+def _requests_supports_stream() -> bool:
+    """Return True if the active ``requests`` implementation accepts ``stream``."""
+
+    func = requests.get
+    try:  # Prefer inspect when available (CPython)
+        import inspect  # type: ignore
+
+        sig = inspect.signature(func)
+        if "stream" in sig.parameters:
+            return True
+        for p in sig.parameters.values():
+            if p.kind == inspect.Parameter.VAR_KEYWORD:
+                return True
+    except Exception:
+        try:  # Fallback for MicroPython which lacks full inspect
+            code = func.__code__  # type: ignore[attr-defined]
+            if "stream" in code.co_varnames:  # type: ignore[attr-defined]
+                return True
+            return bool(getattr(code, "co_flags", 0) & 0x08)
+        except Exception:
+            pass
+    return False
+
+
 class OtaClient:
     """GitHub based OTA client with ``stable`` and ``developer`` channels."""
 
@@ -166,10 +190,13 @@ class OtaClient:
             timeout = connect_timeout
         elif read_timeout is not None:
             timeout = read_timeout
+        supports_stream = _requests_supports_stream()
+        kwargs = {"headers": headers}
+        if supports_stream:
+            kwargs["stream"] = raw
         if timeout is not None:
-            r = requests.get(url, headers=headers, stream=raw, timeout=timeout)
-        else:
-            r = requests.get(url, headers=headers, stream=raw)
+            kwargs["timeout"] = timeout
+        r = requests.get(url, **kwargs)
         self._debug("->", getattr(r, "status_code", "?"))
         return r
 
