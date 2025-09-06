@@ -856,6 +856,8 @@ class OTA:
         self._verify_manifest_signature(manifest)
         current = self._read_state()
         version = manifest.get("version", tag)
+        if self.cfg.get("channel", "stable") == "stable":
+            self._debug("Release version:", version)
         if (
             not self.cfg.get("force")
             and current
