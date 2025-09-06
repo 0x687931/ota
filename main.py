@@ -6,7 +6,15 @@ from ota_client import OtaClient
 
 def load_config():
     with open("ota_config.json") as f:
-        return json.load(f)
+        cfg = json.load(f)
+    placeholders = {"YOUR_GITHUB_USERNAME", "YOUR_REPO_NAME"}
+    owner = str(cfg.get("owner", "")).strip().upper()
+    repo = str(cfg.get("repo", "")).strip().upper()
+    if not owner or owner in placeholders or not repo or repo in placeholders:
+        raise ValueError(
+            "ota_config.json must define non-placeholder 'owner' and 'repo' values"
+        )
+    return cfg
 
 
 def main():
