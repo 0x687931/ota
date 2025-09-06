@@ -574,7 +574,7 @@ class OTA:
     # --------------------------------------------------------
     # Swap with rollback
 
-    def stage_and_swap(self, applied_ref, deletes=None, safe_tail=None):
+    def stage_and_swap(self, applied_ref, applied_commit, deletes=None, safe_tail=None):
         applied = []
         self._debug("Applying update:", applied_ref)
         try:
@@ -624,7 +624,7 @@ class OTA:
                                     applied.append((None, bpath))
                                 except Exception:
                                     pass
-            self._write_state(applied_ref)
+            self._write_state(applied_ref, applied_commit)
         except Exception:
             self._debug("Rollback triggered")
             # best effort rollback
@@ -643,10 +643,10 @@ class OTA:
             ensure_dirs(self.stage)
             ensure_dirs(self.backup)
 
-    def _write_state(self, ref: str):
+    def _write_state(self, ref: str, commit: str):
         tmp = VERSION_FILE + ".tmp"
         with open(tmp, "w") as f:
-            json.dump({"ref": ref}, f)
+            json.dump({"ref": ref, "commit": commit}, f)
             f.flush()
             if hasattr(os, "fsync"):
                 os.fsync(f.fileno())
@@ -655,7 +655,7 @@ class OTA:
     def _read_state(self):
         try:
             with open(VERSION_FILE) as f:
-                return json.load(f).get("ref")
+                return json.load(f)
         except Exception:
             return None
 
@@ -696,7 +696,7 @@ class OTA:
         if not ok:
             raise OTAError("manifest signature mismatch")
 
-    def _stable_with_manifest(self, rel_json, tag):
+    def _stable_with_manifest(self, rel_json, tag, commit):
         # find manifest asset
         asset = None
         for a in rel_json.get("assets", []):
@@ -719,7 +719,7 @@ class OTA:
         self._verify_manifest_signature(manifest)
         current = self._read_state()
         version = manifest.get("version", tag)
-        if current == version:
+        if current and current.get("ref") == version and current.get("commit") == commit:
             return {"updated": False}
         # stage all files listed with raw URLs at this tag
         for fi in manifest.get("files", []):
@@ -746,7 +746,7 @@ class OTA:
                     raise OTAError("crc32 mismatch after write for " + rel)
             self._debug("Hash OK for", rel)
         # swap and optional deletes
-        self.stage_and_swap(version, deletes=manifest.get("deletes", []))
+        self.stage_and_swap(version, commit, deletes=manifest.get("deletes", []))
         # optional post update hook
         hook = manifest.get("post_update")
         if hook:
@@ -763,9 +763,10 @@ class OTA:
             return False
         target = self.resolve_target()
         self._debug("Resolving target:", target)
+        state = self._read_state()
         if target["mode"] == "tag":
             # try manifest path first
-            res = self._stable_with_manifest(target["release_json"], target["ref"])
+            res = self._stable_with_manifest(target["release_json"], target["ref"], target["commit"])
             if res is not None:
                 if res.get("updated"):
                     self._perform_reset()
@@ -773,7 +774,7 @@ class OTA:
                 print("No update required")
                 return False
         # developer path or stable without manifest
-        if self._read_state() == target["ref"] and target["mode"] == "tag":
+        if state and state.get("commit") == target["commit"]:
             print("No update required")
             return False
         tree = self.fetch_tree(target["commit"])
@@ -788,7 +789,7 @@ class OTA:
         ref_for_download = target["ref"] if target["mode"] == "tag" else target["commit"]
         for entry in candidates:
             self.stream_and_verify_git(entry, ref_for_download)
-        self.stage_and_swap(target["ref"])
+        self.stage_and_swap(target["ref"], target["commit"])
         self._perform_reset()
         return True
 

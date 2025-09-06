@@ -18,11 +18,13 @@ def test_staging_and_swap(tmp_path):
             f.write('new')
         ensure_dirs(updater.stage)
         ensure_dirs(updater.backup)
-        updater.stage_and_swap('v1')
+        updater.stage_and_swap('v1', 'deadbeef')
         # Verify update
         with open('app.py') as f:
             assert f.read() == 'new'
         with open('version.json') as f:
-            assert json.load(f)['ref'] == 'v1'
+            data = json.load(f)
+            assert data['ref'] == 'v1'
+            assert data['commit'] == 'deadbeef'
     finally:
         os.chdir(cwd)
