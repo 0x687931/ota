@@ -248,6 +248,9 @@ class OTA:
       connect_timeout_sec optional
       retries int default 5
       backoff_sec int default 3
+      chunk optional download buffer size
+      stage_dir optional staging directory
+      backup_dir optional backup directory
       allow list of allowed path prefixes for developer channel
       ignore list of ignored path prefixes for developer channel
       manifest_key optional shared secret for signed manifest
@@ -256,11 +259,11 @@ class OTA:
 
     def __init__(self, cfg: dict):
         self.cfg = cfg
-        self.stage = STAGE_DIR
-        self.backup = BACKUP_DIR
+        self.stage = cfg.get("stage_dir", STAGE_DIR)
+        self.backup = cfg.get("backup_dir", BACKUP_DIR)
         ensure_dirs(self.stage)
         ensure_dirs(self.backup)
-        self.chunk = CHUNK
+        self.chunk = int(cfg.get("chunk", CHUNK))
         self._startup_cleanup()
 
     def _debug(self, *args):
@@ -307,7 +310,7 @@ class OTA:
     def _check_basic_resources(self):
         free_mem = self._mem_free()
         if free_mem is not None:
-            self.chunk = max(256, min(CHUNK, free_mem // 4))
+            self.chunk = max(256, min(self.chunk, free_mem // 4))
             min_mem = int(self.cfg.get("min_free_mem", 0))
             if free_mem < min_mem:
                 return False
@@ -603,8 +606,11 @@ class OTA:
                 for root, dirs, files in _walk(self.stage):
                     for n in files:
                         staged_now.add((root + "/" + n)[len(self.stage) + 1 :])
+                stage_root = os.path.abspath(self.stage)
+                backup_root = os.path.abspath(self.backup)
                 for root, dirs, files in _walk(""):
-                    if root.startswith(STAGE_DIR) or root.startswith(BACKUP_DIR):
+                    abs_root = os.path.abspath(root) if root else os.getcwd()
+                    if abs_root.startswith(stage_root) or abs_root.startswith(backup_root):
                         continue
                     for n in files:
                         rel = (root + "/" + n) if root else n

@@ -24,3 +24,19 @@ def test_startup_stage_cleanup(tmp_path, monkeypatch):
     os.makedirs('.ota_backup', exist_ok=True)
     OTA({})
     assert os.listdir('.ota_stage') == []
+
+
+def test_startup_custom_dirs(tmp_path, monkeypatch):
+    stage = tmp_path / 'custom_stage'
+    backup = tmp_path / 'custom_backup'
+    os.makedirs(stage, exist_ok=True)
+    os.makedirs(backup, exist_ok=True)
+    with open(backup / 'app.txt', 'w') as f:
+        f.write('old')
+    with open(stage / 'app.txt', 'w') as f:
+        f.write('new')
+    monkeypatch.chdir(tmp_path)
+    OTA({'stage_dir': str(stage), 'backup_dir': str(backup)})
+    assert (tmp_path / 'app.txt').read_text() == 'old'
+    assert list(stage.iterdir()) == []
+    assert list(backup.iterdir()) == []

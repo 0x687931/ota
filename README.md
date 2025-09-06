@@ -57,6 +57,8 @@ staged before an atomic swap with rollback support.
      "allow": ["README.md"],
      "ignore": [],
      "chunk": 512,
+     "stage_dir": ".ota_stage",
+     "backup_dir": ".ota_backup",
      "connect_timeout_sec": 20,
      "http_timeout_sec": 20,
      "retries": 3,
@@ -83,6 +85,8 @@ staged before an atomic swap with rollback support.
    - `allow` (list of strings) – whitelist of paths to update.
    - `ignore` (list of strings) – paths to skip during updates.
   - `chunk` (integer) – download buffer size in bytes.
+  - `stage_dir` (string) – staging directory used during updates; defaults to `.ota_stage`.
+  - `backup_dir` (string) – directory holding backups for rollback; defaults to `.ota_backup`.
   - `connect_timeout_sec` / `http_timeout_sec` (integer) – network timeout values.
     On MicroPython the two fields collapse into one effective timeout equal to
     the larger of the provided values.

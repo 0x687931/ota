@@ -9,6 +9,8 @@
   "allow": ["README.md"],
   "ignore": [],
   "chunk": 512,
+  "stage_dir": ".ota_stage",
+  "backup_dir": ".ota_backup",
   "connect_timeout_sec": 20,
   "http_timeout_sec": 20,
   "retries": 3,
