@@ -46,6 +46,9 @@ else:  # pragma: no cover
         def reset(self):
             pass
 
+        def soft_reset(self):
+            pass
+
     machine = _Machine()  # type: ignore
 
 # ------------------------------------------------------------
@@ -652,6 +655,16 @@ class OTA:
             return None
 
     # --------------------------------------------------------
+    # Reset handling
+
+    def _perform_reset(self):
+        mode = self.cfg.get("reset_mode", "hard")
+        if mode == "soft" and hasattr(machine, "soft_reset"):
+            machine.soft_reset()
+        elif mode == "hard":
+            machine.reset()
+
+    # --------------------------------------------------------
     # Signed manifest path for stable release
 
     def _verify_manifest_signature(self, manifest: dict):
@@ -745,7 +758,7 @@ class OTA:
             if res is not None:
                 if res.get("updated"):
                     self._debug("Resetting device")
-                    machine.reset()
+                    self._perform_reset()
                     return True
                 print("No update required")
                 return False
@@ -767,7 +780,7 @@ class OTA:
             self.stream_and_verify_git(entry, ref_for_download)
         self.stage_and_swap(target["ref"])
         self._debug("Resetting device")
-        machine.reset()
+        self._perform_reset()
         return True
 
     # --------------------------------------------------------
