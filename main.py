@@ -1,7 +1,7 @@
 """Example entry point for the ``OTA`` updater."""
 
 import json
-from pathlib import Path
+import os
 
 from ota import OTA
 
@@ -13,9 +13,9 @@ except ModuleNotFoundError:  # pragma: no cover - earlier versions
 
 def load_config(config_path: str = "ota_config.json"):
     """Load configuration from JSON, YAML or TOML based on extension."""
-    path = Path(config_path)
-    text = path.read_text()
-    ext = path.suffix.lower()
+    with open(config_path, "r") as f:
+        text = f.read()
+    ext = os.path.splitext(config_path)[1].lower()
     if ext in (".yaml", ".yml"):
         try:
             import yaml
@@ -33,7 +33,7 @@ def load_config(config_path: str = "ota_config.json"):
     repo = str(cfg.get("repo", "")).strip().upper()
     if not owner or owner in placeholders or not repo or repo in placeholders:
         raise ValueError(
-            f"{path.name} must define non-placeholder 'owner' and 'repo' values"
+            f"{os.path.basename(config_path)} must define non-placeholder 'owner' and 'repo' values"
         )
     return cfg
 
