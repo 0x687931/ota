@@ -606,11 +606,10 @@ class OTA:
                 for root, dirs, files in _walk(self.stage):
                     for n in files:
                         staged_now.add((root + "/" + n)[len(self.stage) + 1 :])
-                stage_root = os.path.abspath(self.stage)
-                backup_root = os.path.abspath(self.backup)
+                # simple relative walk across the repo root
                 for root, dirs, files in _walk(""):
-                    abs_root = os.path.abspath(root) if root else os.getcwd()
-                    if abs_root.startswith(stage_root) or abs_root.startswith(backup_root):
+                    # skip stage and backup folders explicitly
+                    if root.startswith(self.stage) or root.startswith(self.backup):
                         continue
                     for n in files:
                         rel = (root + "/" + n) if root else n
@@ -707,7 +706,8 @@ class OTA:
         if not asset:
             return None
         # download manifest
-        url = asset["url"]
+        # prefer browser_download_url for MicroPython reliability
+        url = asset.get("browser_download_url") or asset["url"]
         r = self._get(url, raw=True)
         try:
             manifest = r.json()
