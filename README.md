@@ -109,6 +109,7 @@ staged before an atomic swap with rollback support.
    http_timeout_sec = 20
    retries = 3
    backoff_sec = 3
+   force = false
    reset_mode = "hard"
    debug = false
    ```
@@ -120,26 +121,27 @@ staged before an atomic swap with rollback support.
 
    The configuration fields are:
 
-   - `owner` (string) – GitHub username.
-   - `repo` (string) – repository name.
-   - `ssid` (string) – Wi‑Fi network name.
-   - `password` (string) – Wi‑Fi password.
-   - `channel` (string) – `stable` for releases or `developer` for branch tip.
-   - `branch` (string) – development branch when using the `developer` channel.
-   - `token` (string) – GitHub API token; use an empty string (`""`) for public repositories.
-   - `allow` (list of strings) – whitelist of paths to update.
-   - `ignore` (list of strings) – paths to skip during updates.
-  - `chunk` (integer) – download buffer size in bytes.
-  - `stage_dir` (string) – staging directory used during updates; defaults to `.ota_stage`.
-  - `backup_dir` (string) – directory holding backups for rollback; defaults to `.ota_backup`.
-  - `connect_timeout_sec` / `http_timeout_sec` (integer) – network timeout values.
+  - `owner` (string, required) – GitHub username.
+  - `repo` (string, required) – repository name.
+  - `ssid` (string, required) – Wi‑Fi network name.
+  - `password` (string, required) – Wi‑Fi password.
+  - `channel` (string, required) – `stable` for releases or `developer` for branch tip.
+  - `branch` (string, optional) – development branch when using the `developer` channel.
+  - `token` (string, optional) – GitHub API token; use an empty string (`""`) for public repositories.
+  - `allow` (list of strings, required) – whitelist of paths to update.
+  - `ignore` (list of strings, optional) – paths to skip during updates.
+  - `chunk` (integer, optional) – download buffer size in bytes.
+  - `stage_dir` (string, optional) – staging directory used during updates; defaults to `.ota_stage`.
+  - `backup_dir` (string, optional) – directory holding backups for rollback; defaults to `.ota_backup`.
+  - `connect_timeout_sec` / `http_timeout_sec` (integer, optional) – network timeout values.
     On MicroPython the two fields collapse into one effective timeout equal to
     the larger of the provided values.
-  - `retries` (integer) – number of retry attempts.
-  - `backoff_sec` (integer) – delay between retries in seconds.
-  - `reset_mode` (string) – `hard` for a full reset (default), `soft` for a
+  - `retries` (integer, optional) – number of retry attempts.
+  - `backoff_sec` (integer, optional) – delay between retries in seconds.
+  - `force` (boolean, optional) – set to `true` to force an update even if the installed and remote versions match.
+  - `reset_mode` (string, optional) – `hard` for a full reset (default), `soft` for a
     soft reset when supported, or `none` to disable automatic resets.
-  - `debug` (boolean) – set to `true` for verbose logging.
+  - `debug` (boolean, optional) – set to `true` for verbose logging.
 
    Booleans must use lowercase `true` or `false` without quotes.
 
