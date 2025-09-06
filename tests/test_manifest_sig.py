@@ -2,7 +2,7 @@ import json
 import hmac
 import hashlib
 import pytest
-from ota_updater import OTAUpdater, OTAError
+from ota import OTA, OTAError
 
 
 def _sign(manifest, key):
@@ -14,12 +14,12 @@ def _sign(manifest, key):
 
 def test_manifest_signature_ok():
     m = _sign({'version': '1', 'files': []}, 'secret')
-    upd = OTAUpdater({'manifest_key': 'secret'}, log=False)
+    upd = OTA({'manifest_key': 'secret'})
     upd._verify_manifest_signature(m)
 
 
 def test_manifest_signature_bad():
     m = {'version': '1', 'files': [], 'signature': 'bad'}
-    upd = OTAUpdater({'manifest_key': 'secret'}, log=False)
+    upd = OTA({'manifest_key': 'secret'})
     with pytest.raises(OTAError):
         upd._verify_manifest_signature(m)

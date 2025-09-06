@@ -1,7 +1,7 @@
 import os
 import hashlib
 import io
-from ota_client import OtaClient, git_blob_sha1_stream
+from ota import OTA, git_blob_sha1_stream, ensure_dirs
 
 
 class Resp:
@@ -32,13 +32,13 @@ def test_stream_and_verify(tmp_path):
     sha = hashlib.sha1(b"blob " + str(size).encode() + b"\0" + data).hexdigest()
     entry = {"path": "file.txt", "size": size, "sha": sha, "type": "blob"}
     cfg = {"owner": "o", "repo": "r", "chunk": 4}
-    client = OtaClient(cfg)
-    client.stage_dir = str(tmp_path / ".stage")
-    client.backup_dir = str(tmp_path / ".backup")
-    client.ensure_dirs(client.stage_dir)
-    client.ensure_dirs(client.backup_dir)
+    client = OTA(cfg)
+    client.stage = str(tmp_path / ".stage")
+    client.backup = str(tmp_path / ".backup")
+    ensure_dirs(client.stage)
+    ensure_dirs(client.backup)
     client._get = lambda url, raw=False: Resp(data)
-    assert client.stream_and_verify(entry, "ref")
+    client.stream_and_verify_git(entry, "ref")
     staged = tmp_path / ".stage" / "file.txt"
     assert staged.read_bytes() == data
 
@@ -49,13 +49,13 @@ def test_stream_and_verify_requests_raw(tmp_path):
     sha = hashlib.sha1(b"blob " + str(size).encode() + b"\0" + data).hexdigest()
     entry = {"path": "file.txt", "size": size, "sha": sha, "type": "blob"}
     cfg = {"owner": "o", "repo": "r", "chunk": 4}
-    client = OtaClient(cfg)
-    client.stage_dir = str(tmp_path / ".stage")
-    client.backup_dir = str(tmp_path / ".backup")
-    client.ensure_dirs(client.stage_dir)
-    client.ensure_dirs(client.backup_dir)
+    client = OTA(cfg)
+    client.stage = str(tmp_path / ".stage")
+    client.backup = str(tmp_path / ".backup")
+    ensure_dirs(client.stage)
+    ensure_dirs(client.backup)
     client._get = lambda url, raw=False: RawResp(data)
-    assert client.stream_and_verify(entry, "ref")
+    client.stream_and_verify_git(entry, "ref")
     staged = tmp_path / ".stage" / "file.txt"
     assert staged.read_bytes() == data
 
@@ -66,12 +66,12 @@ def test_stream_and_verify_fail(tmp_path):
     sha = "0" * 40
     entry = {"path": "bad.txt", "size": size, "sha": sha, "type": "blob"}
     cfg = {"owner": "o", "repo": "r"}
-    client = OtaClient(cfg)
-    client.stage_dir = str(tmp_path / ".s")
-    client.backup_dir = str(tmp_path / ".b")
-    client.ensure_dirs(client.stage_dir)
-    client.ensure_dirs(client.backup_dir)
+    client = OTA(cfg)
+    client.stage = str(tmp_path / ".s")
+    client.backup = str(tmp_path / ".b")
+    ensure_dirs(client.stage)
+    ensure_dirs(client.backup)
     client._get = lambda url, raw=False: Resp(data)
     import pytest
     with pytest.raises(Exception):
-        client.stream_and_verify(entry, "ref")
+        client.stream_and_verify_git(entry, "ref")

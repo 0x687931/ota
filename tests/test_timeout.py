@@ -1,4 +1,4 @@
-from ota_client import OtaClient
+from ota import OTA
 
 
 class DummyRequests:
@@ -19,8 +19,8 @@ class DummyRequests:
 
 def test_get_uses_configured_timeouts(monkeypatch):
     dummy = DummyRequests()
-    monkeypatch.setattr("ota_client.requests", dummy)
-    client = OtaClient(
+    monkeypatch.setattr("ota.requests", dummy)
+    client = OTA(
         {
             "owner": "o",
             "repo": "r",
@@ -34,9 +34,9 @@ def test_get_uses_configured_timeouts(monkeypatch):
 
 def test_get_uses_single_timeout_on_micropython(monkeypatch):
     dummy = DummyRequests()
-    monkeypatch.setattr("ota_client.requests", dummy)
-    monkeypatch.setattr("ota_client.MICROPYTHON", True)
-    client = OtaClient(
+    monkeypatch.setattr("ota.requests", dummy)
+    monkeypatch.setattr("ota.MICROPYTHON", True)
+    client = OTA(
         {
             "owner": "o",
             "repo": "r",

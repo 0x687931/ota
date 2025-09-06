@@ -1,4 +1,4 @@
-from ota_client import OtaClient
+from ota import OTA
 
 
 class ReqWithStream:
@@ -19,8 +19,8 @@ class ReqWithStream:
 
 def test_get_passes_stream_when_supported(monkeypatch):
     dummy = ReqWithStream()
-    monkeypatch.setattr("ota_client.requests", dummy)
-    client = OtaClient({"owner": "o", "repo": "r"})
+    monkeypatch.setattr("ota.requests", dummy)
+    client = OTA({"owner": "o", "repo": "r"})
     client._get("http://example.com", raw=True)
     assert dummy.stream is True
     client._get("http://example.com", raw=False)
@@ -45,7 +45,7 @@ class ReqNoStream:
 
 def test_get_omits_stream_when_not_supported(monkeypatch):
     dummy = ReqNoStream()
-    monkeypatch.setattr("ota_client.requests", dummy)
-    client = OtaClient({"owner": "o", "repo": "r"})
+    monkeypatch.setattr("ota.requests", dummy)
+    client = OTA({"owner": "o", "repo": "r"})
     client._get("http://example.com", raw=True)
     assert dummy.called

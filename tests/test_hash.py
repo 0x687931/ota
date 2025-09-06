@@ -2,9 +2,8 @@ import os
 import tempfile
 import hashlib
 import binascii
-import pytest
 
-from ota_updater import OTAUpdater, sha256_file, crc32_file, OTAError, sha1_git_blob_stream
+from ota import sha256_file, crc32_file, git_blob_sha1_stream
 
 
 def test_sha256_and_crc32():
@@ -18,19 +17,6 @@ def test_sha256_and_crc32():
         os.remove(name)
 
 
-def test_verify_file():
-    with tempfile.NamedTemporaryFile(delete=False) as f:
-        f.write(b"data")
-        name = f.name
-    upd = OTAUpdater({}, log=False)
-    size = os.path.getsize(name)
-    sha = hashlib.sha256(b"data").hexdigest()
-    upd._verify_file(name, sha, size)
-    with pytest.raises(OTAError):
-        upd._verify_file(name, "0" * 64, size)
-    os.remove(name)
-
-
 def test_git_blob_sha1_stream():
     data = b"blob data"
     size = len(data)
@@ -39,4 +25,4 @@ def test_git_blob_sha1_stream():
         yield data
 
     expect = hashlib.sha1(b"blob " + str(size).encode() + b"\x00" + data).hexdigest()
-    assert sha1_git_blob_stream(size, reader) == expect
+    assert git_blob_sha1_stream(size, reader, 1024) == expect
