@@ -1,27 +1,29 @@
-"""Unified OTA updater for MicroPython Pico W
-
-Supports two channels:
-- stable via GitHub Releases with optional signed manifest and deletes
-- developer via a branch tip using Git tree and Git blob SHA1 verification
-
-Features:
-- streaming downloads with low RAM usage
-- staging plus atomic swap with backup and rollback
-- fsync before rename to reduce power loss corruption
-- Wi Fi connect with bounded retries
-- optional post update hook
+"""
+Unified OTA updater for MicroPython Pico W with memory and reliability improvements
 """
 
-import json
 import os
 import sys
 from time import sleep
 
 # ------------------------------------------------------------
-# Environment and shims
+# JSON with MicroPython preference
+try:
+    import ujson as json  # type: ignore
+except Exception:
+    import json  # type: ignore
+
+# const helper
+try:
+    from micropython import const  # type: ignore
+except Exception:
+    def const(x):  # type: ignore
+        return x
 
 MICROPYTHON = sys.implementation.name == "micropython"
 
+# ------------------------------------------------------------
+# Binary helpers
 try:
     import ubinascii as binascii  # type: ignore
 except Exception:
@@ -54,7 +56,7 @@ else:  # pragma: no cover
 # ------------------------------------------------------------
 # Constants
 
-CHUNK = 1024
+CHUNK = const(1024)
 VERSION_FILE = "version.json"
 STAGE_DIR = ".ota_stage"
 BACKUP_DIR = ".ota_backup"
@@ -71,17 +73,25 @@ class OTAError(Exception):
 def _hexdigest(h):
     return h.hexdigest() if hasattr(h, "hexdigest") else binascii.hexlify(h.digest()).decode()
 
+# fast CRC32 fallback with table for ports that lack binascii.crc32
+_CRC32_TAB = None
 def _crc32_update(crc, block):
     try:
         return binascii.crc32(block, crc)
     except Exception:
-        # bitwise fallback to keep behaviour consistent with binascii.crc32
-        state = crc ^ 0xFFFFFFFF
+        global _CRC32_TAB
+        if _CRC32_TAB is None:
+            tab = []
+            for i in range(256):
+                c = i
+                for _ in range(8):
+                    c = (c >> 1) ^ 0xEDB88320 if (c & 1) else (c >> 1)
+                tab.append(c & 0xFFFFFFFF)
+            _CRC32_TAB = tuple(tab)
+        c = crc ^ 0xFFFFFFFF
         for b in block:
-            state ^= b
-            for _ in range(8):
-                state = (state >> 1) ^ 0xEDB88320 if (state & 1) else (state >> 1)
-        return (state ^ 0xFFFFFFFF) & 0xFFFFFFFF
+            c = _CRC32_TAB[(c ^ b) & 0xFF] ^ (c >> 8)
+        return (c ^ 0xFFFFFFFF) & 0xFFFFFFFF
 
 def _hmac_sha256_hex(key_bytes, data_bytes):
     try:
@@ -100,22 +110,42 @@ def _hmac_sha256_hex(key_bytes, data_bytes):
 
 def sha256_file(path, chunk=CHUNK):
     h = hashlib.sha256()
+    buf = bytearray(chunk)
+    mv = memoryview(buf)
     with open(path, "rb") as f:
-        while True:
-            b = f.read(chunk)
-            if not b:
-                break
-            h.update(b)
+        readinto = getattr(f, "readinto", None)
+        if readinto:
+            while True:
+                n = readinto(buf)
+                if not n:
+                    break
+                h.update(mv[:n])
+        else:
+            while True:
+                b = f.read(chunk)
+                if not b:
+                    break
+                h.update(b)
     return _hexdigest(h)
 
 def crc32_file(path, chunk=CHUNK):
     crc = 0
+    buf = bytearray(chunk)
+    mv = memoryview(buf)
     with open(path, "rb") as f:
-        while True:
-            b = f.read(chunk)
-            if not b:
-                break
-            crc = _crc32_update(crc, b)
+        readinto = getattr(f, "readinto", None)
+        if readinto:
+            while True:
+                n = readinto(buf)
+                if not n:
+                    break
+                crc = _crc32_update(crc, mv[:n])
+        else:
+            while True:
+                b = f.read(chunk)
+                if not b:
+                    break
+                crc = _crc32_update(crc, b)
     return crc & 0xFFFFFFFF
 
 def git_blob_sha1_stream(total_size, reader, chunk):
@@ -142,23 +172,14 @@ def http_reader(resp):
     return _yield
 
 def _requests_supports_stream():
-    func = requests.get
+    func = getattr(requests, "get", None)
+    if func is None or getattr(func, "__module__", "") == "urequests":
+        return False
     try:
-        import inspect  # type: ignore
-        sig = inspect.signature(func)
-        if "stream" in sig.parameters:
-            return True
-        for p in sig.parameters.values():
-            if p.kind == inspect.Parameter.VAR_KEYWORD:
-                return True
+        code = func.__code__
+        return "stream" in code.co_varnames[: code.co_argcount]
     except Exception:
-        try:
-            code = func.__code__  # type: ignore
-            if "stream" in getattr(code, "co_varnames", ()):
-                return True
-        except Exception:
-            pass
-    return False
+        return False
 
 # ------------------------------------------------------------
 # Filesystem utils
@@ -235,27 +256,7 @@ def _exists(p):
 # Main class
 
 class OTA:
-    """Unified OTA client
-
-    cfg keys:
-      ssid, password
-      owner, repo
-      channel stable or developer
-      branch main by default
-      token optional for private repos
-      user_agent optional
-      http_timeout_sec int default 10
-      connect_timeout_sec optional
-      retries int default 5
-      backoff_sec int default 3
-      chunk optional download buffer size
-      stage_dir optional staging directory
-      backup_dir optional backup directory
-      allow list of allowed path prefixes for developer channel
-      ignore list of ignored path prefixes for developer channel
-      manifest_key optional shared secret for signed manifest
-      delete_patterns optional patterns to clean stale files in developer channel
-    """
+    """Unified OTA client"""
 
     def __init__(self, cfg: dict):
         self.cfg = cfg
@@ -279,7 +280,7 @@ class OTA:
                 return int(machine.freq() // 1000000)
             except Exception:
                 return None
-        try:  # pragma: no cover - best effort
+        try:  # pragma: no cover
             import psutil  # type: ignore
             freq = getattr(psutil.cpu_freq(), "current", None)
             return int(freq) if freq else None
@@ -291,7 +292,7 @@ class OTA:
             import gc
             return gc.mem_free()  # type: ignore
         except Exception:
-            try:  # pragma: no cover - best effort on CPython
+            try:  # pragma: no cover
                 import psutil  # type: ignore
                 return int(psutil.virtual_memory().available)
             except Exception:
@@ -310,7 +311,8 @@ class OTA:
     def _check_basic_resources(self):
         free_mem = self._mem_free()
         if free_mem is not None:
-            self.chunk = max(256, min(self.chunk, free_mem // 4))
+            # cap to protect heap on constrained ports
+            self.chunk = max(256, min(self.chunk, free_mem // 4, 4096))
             min_mem = int(self.cfg.get("min_free_mem", 0))
             if free_mem < min_mem:
                 return False
@@ -363,17 +365,26 @@ class OTA:
             raise OTAError("Wi Fi SSID not configured")
         sta = network.WLAN(network.STA_IF)
         sta.active(True)
+        try:
+            # reduce power save stalls on Pico W
+            sta.config(pm=0xA11140)
+        except Exception:
+            pass
         if not sta.isconnected():
             sta.connect(ssid, self.cfg.get("password"))
-            attempts = 0
             retries = int(self.cfg.get("retries", 5))
             backoff = int(self.cfg.get("backoff_sec", 3))
-            while not sta.isconnected() and attempts < retries:
+            for _ in range(retries):
+                if sta.isconnected():
+                    break
+                status = getattr(sta, "status", lambda: 0)()
+                # MicroPython negative status values indicate hard failure
+                if isinstance(status, int) and status < 0:
+                    break
                 sleep(backoff)
-                attempts += 1
         if not sta.isconnected():
             raise OTAError("Wi Fi connection failed")
-        self._debug("Connected to Wi-Fi:", sta.ifconfig()[0])
+        self._debug("Connected to Wi Fi:", sta.ifconfig()[0])
 
     def _headers(self):
         h = {"Accept": "application/vnd.github+json"}
@@ -475,13 +486,17 @@ class OTA:
     def iter_candidates(self, tree):
         allow = self.cfg.get("allow")
         ignore = self.cfg.get("ignore", [])
+        if allow:
+            allow = tuple(a.rstrip("/") + "/" if not a.endswith("/") and a else a for a in allow)
+        if ignore:
+            ignore = tuple(i.rstrip("/") + "/" if not i.endswith("/") and i else i for i in ignore)
         for entry in tree:
             if entry.get("type") != "blob" or int(entry.get("size", 0)) == 0:
                 continue
             p = entry["path"]
-            if allow and not any(p == a or p.startswith(a.rstrip("/") + "/") for a in allow):
+            if allow and not (p in allow or any(p.startswith(a) for a in allow)):
                 continue
-            if any(p == i or p.startswith(i.rstrip("/") + "/") for i in ignore):
+            if ignore and (p in ignore or any(p.startswith(i) for i in ignore)):
                 continue
             yield entry
 
@@ -532,6 +547,11 @@ class OTA:
             except OSError:
                 pass
             os.rename(tmp, final_)
+            if hasattr(os, "sync"):
+                try:
+                    os.sync()
+                except Exception:
+                    pass
             self._debug("Hash OK for", rel)
         finally:
             try:
@@ -540,17 +560,47 @@ class OTA:
                 pass
 
     def _download_asset(self, url, dest, expected_sha=None, expected_crc=None, expected_size=None):
+        # skip identical write when a strong hash is available
+        if expected_sha and _exists(dest):
+            try:
+                if sha256_file(dest, self.chunk) == expected_sha:
+                    return
+            except Exception:
+                pass
         r = self._get(url, raw=True)
         tmp = dest + ".tmp"
         h = hashlib.sha256()
         crc = 0
         total = 0
+        bufsize = self.chunk
+        buf = bytearray(bufsize)
+        mv = memoryview(buf)
+        src = getattr(r, "raw", None) or r
+        readinto = getattr(src, "readinto", None)
+        import gc
         with open(tmp, "wb") as f:
-            for block in http_reader(r)(self.chunk):
-                total += len(block)
-                h.update(block)
-                crc = _crc32_update(crc, block)
-                f.write(block)
+            n_chunks = 0
+            if readinto:
+                while True:
+                    n = readinto(buf)
+                    if not n:
+                        break
+                    total += n
+                    h.update(mv[:n])
+                    crc = _crc32_update(crc, mv[:n])
+                    f.write(mv[:n])
+                    n_chunks += 1
+                    if n_chunks & 63 == 0:
+                        gc.collect()
+            else:
+                for block in http_reader(r)(bufsize):
+                    total += len(block)
+                    h.update(block)
+                    crc = _crc32_update(crc, block)
+                    f.write(block)
+                    n_chunks += 1
+                    if n_chunks & 63 == 0:
+                        gc.collect()
             f.flush()
             if hasattr(os, "fsync"):
                 os.fsync(f.fileno())
@@ -570,6 +620,11 @@ class OTA:
             os.remove(tmp)
             raise OTAError("crc32 mismatch for {}".format(dest))
         os.rename(tmp, dest)
+        if hasattr(os, "sync"):
+            try:
+                os.sync()
+            except Exception:
+                pass
 
     # --------------------------------------------------------
     # Swap with rollback
@@ -606,9 +661,7 @@ class OTA:
                 for root, dirs, files in _walk(self.stage):
                     for n in files:
                         staged_now.add((root + "/" + n)[len(self.stage) + 1 :])
-                # simple relative walk across the repo root
                 for root, dirs, files in _walk(""):
-                    # skip stage and backup folders explicitly
                     if root.startswith(self.stage) or root.startswith(self.backup):
                         continue
                     for n in files:
@@ -625,9 +678,13 @@ class OTA:
                                 except Exception:
                                     pass
             self._write_state(applied_ref, applied_commit)
+            if hasattr(os, "sync"):
+                try:
+                    os.sync()
+                except Exception:
+                    pass
         except Exception:
             self._debug("Rollback triggered")
-            # best effort rollback
             for target, backup in reversed(applied):
                 try:
                     if backup and _exists(backup):
@@ -697,7 +754,6 @@ class OTA:
             raise OTAError("manifest signature mismatch")
 
     def _stable_with_manifest(self, rel_json, tag, commit):
-        # find manifest asset
         asset = None
         for a in rel_json.get("assets", []):
             if a.get("name") == "manifest.json":
@@ -705,8 +761,6 @@ class OTA:
                 break
         if not asset:
             return None
-        # download manifest
-        # prefer browser_download_url for MicroPython reliability
         url = asset.get("browser_download_url") or asset["url"]
         r = self._get(url, raw=True)
         try:
@@ -721,7 +775,6 @@ class OTA:
         version = manifest.get("version", tag)
         if current and current.get("ref") == version and current.get("commit") == commit:
             return {"updated": False}
-        # stage all files listed with raw URLs at this tag
         for fi in manifest.get("files", []):
             rel = fi["path"]
             raw_url = "https://raw.githubusercontent.com/%s/%s/%s/%s" % (
@@ -737,7 +790,6 @@ class OTA:
                 expected_crc=fi.get("crc32"),
                 expected_size=fi.get("size"),
             )
-            # verify again from disk to be safe
             if fi.get("sha256"):
                 if sha256_file(dest, self.chunk) != fi["sha256"]:
                     raise OTAError("sha256 mismatch after write for " + rel)
@@ -745,9 +797,7 @@ class OTA:
                 if crc32_file(dest, self.chunk) != int(fi["crc32"]):
                     raise OTAError("crc32 mismatch after write for " + rel)
             self._debug("Hash OK for", rel)
-        # swap and optional deletes
         self.stage_and_swap(version, commit, deletes=manifest.get("deletes", []))
-        # optional post update hook
         hook = manifest.get("post_update")
         if hook:
             self._run_hook(hook)
@@ -765,11 +815,8 @@ class OTA:
         self._debug("Resolving target:", target)
         state = self._read_state()
         self._debug("Installed version:", state)
-        self._debug(
-            "Repo version:", {"ref": target["ref"], "commit": target["commit"]}
-        )
+        self._debug("Repo version:", {"ref": target["ref"], "commit": target["commit"]})
         if target["mode"] == "tag":
-            # try manifest path first
             res = self._stable_with_manifest(target["release_json"], target["ref"], target["commit"])
             if res is not None:
                 if res.get("updated"):
@@ -779,7 +826,6 @@ class OTA:
                 self._debug("No update required")
                 print("No update required")
                 return False
-        # developer path or stable without manifest
         if state and state.get("commit") == target["commit"]:
             self._debug("No update required")
             print("No update required")
@@ -809,6 +855,11 @@ class OTA:
             mod = path_.replace("/", ".")
             if mod.endswith(".py"):
                 mod = mod[:-3]
+            # ensure fresh import if hook was updated
+            m = sys.modules.pop(mod, None)
+            if m is not None:
+                del m
             __import__(mod)
         except Exception as exc:
             print("post update hook failed:", exc)
+
