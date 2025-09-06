@@ -18,7 +18,7 @@ staged before an atomic swap with rollback support.
 
 ## Usage
 
-1. Copy `ota_client.py` and `main.py` to the device.
+1. Copy `ota.py` and `main.py` to the device.
 2. Provide configuration in `ota_config.json` (an example is included).
    Set ``channel`` to ``stable`` to pull the latest GitHub release or to
    ``developer`` to use the tip of ``branch``.
@@ -88,7 +88,7 @@ staged before an atomic swap with rollback support.
 
    Booleans must use lowercase `true` or `false` without quotes.
 
-3. Copy `ota_client.py`, `main.py` and the config file to the root of the Pico.
+3. Copy `ota.py`, `main.py` and the config file to the root of the Pico.
 4. Run the updater from the REPL:
 
    ```python
@@ -109,9 +109,15 @@ running on a Raspberry Pi Pico W with an RP2040.
 
 ## Testing
 
-The repository includes unit tests that exercise hash verification,
-resolve logic and file staging with rollback.  Run the tests on a
-development machine with Python 3:
+Run a quick smoke test to verify that the client can resolve the update
+target for each channel without applying changes:
+
+```bash
+python integration_test.py
+```
+
+For comprehensive coverage, run the unit tests on a development
+machine with Python 3:
 
 ```bash
 pytest
