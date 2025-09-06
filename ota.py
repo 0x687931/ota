@@ -273,6 +273,12 @@ class OTA:
         ensure_dirs(self.stage)
         ensure_dirs(self.backup)
         self.chunk = int(cfg.get("chunk", CHUNK))
+        allow = cfg.get("allow") or []
+        allow = [a.rstrip("/") for a in allow if a]
+        self._allow = tuple(allow) or None
+        ignore = cfg.get("ignore") or []
+        ignore = [i.rstrip("/") for i in ignore if i]
+        self._ignore = tuple(ignore) or None
         self._init_adapt_state()
         self._startup_cleanup()
 
@@ -297,6 +303,16 @@ class OTA:
         if short:
             return f"#{short}"
         return ""
+
+    # --------------------------------------------------------
+    # Path filtering
+
+    def _is_permitted(self, path: str) -> bool:
+        if self._allow and not any(path == a or path.startswith(a + "/") for a in self._allow):
+            return False
+        if self._ignore and any(path == i or path.startswith(i + "/") for i in self._ignore):
+            return False
+        return True
 
     # --------------------------------------------------------
     # Resource checks
@@ -370,6 +386,8 @@ class OTA:
                 for name in files:
                     bpath = (root + "/" + name)
                     rel = bpath[len(self.backup) + 1 :]
+                    if not self._is_permitted(rel):
+                        continue
                     target = rel
                     ensure_dirs(rel.rpartition("/")[0])
                     if _exists(target):
@@ -585,19 +603,11 @@ class OTA:
         return self._get_json(url)["tree"]
 
     def iter_candidates(self, tree):
-        allow = self.cfg.get("allow")
-        ignore = self.cfg.get("ignore", [])
-        if allow:
-            allow = tuple(a.rstrip("/") + "/" if not a.endswith("/") and a else a for a in allow)
-        if ignore:
-            ignore = tuple(i.rstrip("/") + "/" if not i.endswith("/") and i else i for i in ignore)
         for entry in tree:
             if entry.get("type") != "blob" or int(entry.get("size", 0)) == 0:
                 continue
             p = entry["path"]
-            if allow and not (p in allow or any(p.startswith(a) for a in allow)):
-                continue
-            if ignore and (p in ignore or any(p.startswith(i) for i in ignore)):
+            if not self._is_permitted(p):
                 continue
             yield entry
 
@@ -739,6 +749,8 @@ class OTA:
                 for name in files:
                     stage_path = (root + "/" + name)
                     rel = stage_path[len(self.stage) + 1 :]
+                    if not self._is_permitted(rel):
+                        continue
                     target = rel
                     backup = self._backup_path(rel)
                     ensure_dirs(backup.rpartition("/")[0])
@@ -750,6 +762,8 @@ class OTA:
             # deletions from manifest
             if deletes:
                 for rel in deletes:
+                    if not self._is_permitted(rel):
+                        continue
                     if _exists(rel):
                         bpath = self._backup_path(rel)
                         ensure_dirs(bpath.rpartition("/")[0])
@@ -761,13 +775,18 @@ class OTA:
                 staged_now = set()
                 for root, dirs, files in _walk(self.stage):
                     for n in files:
-                        staged_now.add((root + "/" + n)[len(self.stage) + 1 :])
+                        rel = (root + "/" + n)[len(self.stage) + 1 :]
+                        if not self._is_permitted(rel):
+                            continue
+                        staged_now.add(rel)
                 for root, dirs, files in _walk(""):
                     if root.startswith(self.stage) or root.startswith(self.backup):
                         continue
                     for n in files:
                         rel = (root + "/" + n) if root else n
                         if rel == VERSION_FILE:
+                            continue
+                        if not self._is_permitted(rel):
                             continue
                         if any(rel == p or rel.startswith(p.rstrip("/") + "/") for p in patterns):
                             if rel not in staged_now and _exists(rel):
@@ -885,6 +904,8 @@ class OTA:
             return {"updated": False}
         for fi in manifest.get("files", []):
             rel = fi["path"]
+            if not self._is_permitted(rel):
+                continue
             raw_url = "https://raw.githubusercontent.com/%s/%s/%s/%s" % (
                 self.cfg["owner"], self.cfg["repo"], tag, rel
             )
@@ -905,7 +926,8 @@ class OTA:
                 if crc32_file(dest, self.chunk) != int(fi["crc32"]):
                     raise OTAError("crc32 mismatch after write for " + rel)
             self._debug("Hash OK for", rel)
-        self.stage_and_swap(version, commit, deletes=manifest.get("deletes", []))
+        deletes = [d for d in manifest.get("deletes", []) if self._is_permitted(d)]
+        self.stage_and_swap(version, commit, deletes=deletes)
         hook = manifest.get("post_update")
         if hook:
             self._run_hook(hook)
