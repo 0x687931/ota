@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "micropython-ota-updater"
+version = "0.1.0"
+description = "Robust over-the-air update system for MicroPython devices"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "AJ McArdle"}]
+requires-python = ">=3.8"
+
+[project.urls]
+Homepage = "https://github.com/ajmcardle/ota"
+
+[tool.setuptools]
+py-modules = ["ota", "manifest_gen", "main"]
