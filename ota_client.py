@@ -193,13 +193,21 @@ class OtaClient:
 
     # ------------------------------------------------------------------
     def resolve_stable(self):
-        """Return (tag, commit_sha) for the latest release."""
+        """Return (ref, commit_sha, mode) for the latest release or fallback."""
 
         url = "https://api.github.com/repos/%s/%s/releases/latest" % (self.owner, self.repo)
-        j = self._get_json(url)
+        try:
+            j = self._get_json(url)
+        except OTAError as exc:
+            if "404" in str(exc):
+                if self.cfg.get("fallback_channel") == "developer":
+                    branch, commit = self.resolve_developer()
+                    return branch, commit, "branch"
+                raise OTAError(f"No release found for {self.owner}/{self.repo}")
+            raise
         tag = j["tag_name"]
         commit = self._resolve_ref("tags/" + tag)
-        return tag, commit
+        return tag, commit, "tag"
 
     def resolve_developer(self):
         """Return (branch, commit_sha) for the configured branch tip."""
@@ -231,8 +239,8 @@ class OtaClient:
     # ------------------------------------------------------------------
     def resolve_target(self):
         if self.cfg.get("channel") == "stable":
-            tag, commit = self.resolve_stable()
-            return {"ref": tag, "commit": commit, "mode": "tag"}
+            ref, commit, mode = self.resolve_stable()
+            return {"ref": ref, "commit": commit, "mode": mode}
         branch, commit = self.resolve_developer()
         return {"ref": branch, "commit": commit, "mode": "branch"}
 
