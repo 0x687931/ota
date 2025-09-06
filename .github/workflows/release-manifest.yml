@@ -1,0 +1,23 @@
+name: Release manifest
+on:
+  release:
+    types: [published]
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Generate manifest
+        env:
+          MANIFEST_KEY: ${{ secrets.MANIFEST_KEY }}
+        run: |
+          python manifest_gen.py --root . --version "${GITHUB_REF_NAME}" --out manifest.json
+      - name: Upload asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: manifest.json
