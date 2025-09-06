@@ -280,6 +280,24 @@ class OTA:
         if self.cfg.get("debug"):
             print("[OTA]", *args)
 
+    def _format_version(self, state: dict) -> str:
+        """Format version info for debug output.
+
+        Shortens the commit hash and combines it with the ref when available.
+        """
+        if not state:
+            return ""
+        ref = state.get("ref")
+        commit = state.get("commit")
+        short = commit[:7] if commit else None
+        if ref and short:
+            return f"{ref} #{short}"
+        if ref:
+            return ref
+        if short:
+            return f"#{short}"
+        return ""
+
     # --------------------------------------------------------
     # Resource checks
 
@@ -422,7 +440,7 @@ class OTA:
         if not self.cfg.get("debug"):
             return
         state = self._read_state()
-        self._debug("Installed version:", state)
+        self._debug("Installed version:", self._format_version(state))
 
         cpu = self._cpu_mhz()
         if cpu is not None:
@@ -903,10 +921,10 @@ class OTA:
             return False
         self._debug_resources()
         target = self.resolve_target()
-        self._debug("Resolving target:", target)
+        self._debug("Resolving target:", target["mode"], self._format_version(target))
         state = self._read_state()
-        self._debug("Installed version:", state)
-        self._debug("Repo version:", {"ref": target["ref"], "commit": target["commit"]})
+        self._debug("Installed version:", self._format_version(state))
+        self._debug("Repo version:", self._format_version(target))
         if target["mode"] == "tag":
             res = self._stable_with_manifest(target["release_json"], target["ref"], target["commit"])
             if res is not None:
