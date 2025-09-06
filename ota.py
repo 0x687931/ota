@@ -258,6 +258,14 @@ def _exists(p):
 class OTA:
     """Unified OTA client"""
 
+    def _init_adapt_state(self):
+        self._adaptations = {
+            "mem_chunk": None,      # new chunk size if lowered
+            "net_retries": None,    # new retries if raised
+            "net_backoff": None,    # new backoff if raised
+            "wifi_pm": None,        # applied power mode tweak
+        }
+
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.stage = cfg.get("stage_dir", STAGE_DIR)
@@ -265,6 +273,7 @@ class OTA:
         ensure_dirs(self.stage)
         ensure_dirs(self.backup)
         self.chunk = int(cfg.get("chunk", CHUNK))
+        self._init_adapt_state()
         self._startup_cleanup()
 
     def _debug(self, *args):
@@ -311,8 +320,11 @@ class OTA:
     def _check_basic_resources(self):
         free_mem = self._mem_free()
         if free_mem is not None:
-            # cap to protect heap on constrained ports
+            old_chunk = self.chunk
+            # cap chunk size and adapt downwards on low memory
             self.chunk = max(256, min(self.chunk, free_mem // 4, 4096))
+            if self.chunk != old_chunk:
+                self._adaptations["mem_chunk"] = self.chunk
             min_mem = int(self.cfg.get("min_free_mem", 0))
             if free_mem < min_mem:
                 return False
@@ -366,25 +378,96 @@ class OTA:
         sta = network.WLAN(network.STA_IF)
         sta.active(True)
         try:
-            # reduce power save stalls on Pico W
             sta.config(pm=0xA11140)
+            self._adaptations["wifi_pm"] = "pm=0xA11140"
         except Exception:
             pass
         if not sta.isconnected():
             sta.connect(ssid, self.cfg.get("password"))
             retries = int(self.cfg.get("retries", 5))
             backoff = int(self.cfg.get("backoff_sec", 3))
+            # if RSSI is poor we adapt retries and backoff on the fly
+            try:
+                rssi = sta.status("rssi")
+                if isinstance(rssi, int):
+                    if rssi < -75:
+                        # poor link: more retries and longer backoff
+                        if retries < 8:
+                            retries = 8
+                            self._adaptations["net_retries"] = retries
+                        if backoff < 5:
+                            backoff = 5
+                            self._adaptations["net_backoff"] = backoff
+                    elif rssi < -70:
+                        # fair link: mild bump
+                        if retries < 6:
+                            retries = 6
+                            self._adaptations["net_retries"] = retries
+                # if RSSI unknown, leave defaults
+            except Exception:
+                pass
+
             for _ in range(retries):
                 if sta.isconnected():
                     break
                 status = getattr(sta, "status", lambda: 0)()
-                # MicroPython negative status values indicate hard failure
                 if isinstance(status, int) and status < 0:
                     break
                 sleep(backoff)
         if not sta.isconnected():
             raise OTAError("Wi Fi connection failed")
         self._debug("Connected to Wi Fi:", sta.ifconfig()[0])
+
+    def _debug_resources(self):
+        if not self.cfg.get("debug"):
+            return
+        state = self._read_state()
+        self._debug("Installed version:", state)
+
+        cpu = self._cpu_mhz()
+        if cpu is not None:
+            self._debug("CPU MHz:", cpu)
+
+        mem = self._mem_free()
+        if mem is not None:
+            self._debug("Free memory: {:.1f} KB".format(mem / 1024))
+
+        st = self._storage_free()
+        if st is not None:
+            self._debug("Free storage: {:.2f} MB".format(st / (1024 * 1024)))
+
+        if network is not None:
+            try:
+                sta = network.WLAN(network.STA_IF)
+                if sta.isconnected():
+                    ip, mask, gw, dns = sta.ifconfig()
+                    self._debug("Wi Fi SSID:", self.cfg.get("ssid"))
+                    self._debug("Wi Fi IP:", ip)
+                    try:
+                        rssi = sta.status("rssi")
+                        if isinstance(rssi, int):
+                            if rssi >= -55:
+                                quality = "good"
+                            elif rssi >= -70:
+                                quality = "fair"
+                            else:
+                                quality = "poor"
+                            self._debug("Wi Fi RSSI:", "{} dBm ({})".format(rssi, quality))
+                    except Exception:
+                        pass
+            except Exception as exc:
+                self._debug("Wi Fi status unavailable:", exc)
+
+        # Only print adjustment notes if we actually adapted behaviour
+        a = self._adaptations
+        if a["mem_chunk"] is not None:
+            self._debug("Adapt: chunk size ->", a["mem_chunk"])
+        if a["net_retries"] is not None:
+            self._debug("Adapt: connect retries ->", a["net_retries"])
+        if a["net_backoff"] is not None:
+            self._debug("Adapt: connect backoff ->", a["net_backoff"])
+        if a["wifi_pm"] is not None:
+            self._debug("Adapt: wifi power mode ->", a["wifi_pm"])
 
     def _headers(self):
         h = {"Accept": "application/vnd.github+json"}
@@ -811,6 +894,7 @@ class OTA:
         if not self._check_basic_resources():
             print("Insufficient system resources")
             return False
+        self._debug_resources()
         target = self.resolve_target()
         self._debug("Resolving target:", target)
         state = self._read_state()
