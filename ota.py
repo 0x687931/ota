@@ -288,6 +288,11 @@ class OTA:
         if self.cfg.get("debug"):
             print("[OTA]", *args)
 
+    def _info(self, *args):
+        # Only show plain messages when not in debug mode
+        if not self.cfg.get("debug"):
+            print(*args)
+
     def _format_version(self, state: dict) -> str:
         """Format version info for debug output.
 
@@ -464,9 +469,6 @@ class OTA:
     def _debug_resources(self):
         if not self.cfg.get("debug"):
             return
-        state = self._read_state()
-        self._debug("Installed version:", self._format_version(state))
-
         cpu = self._cpu_mhz()
         if cpu is not None:
             self._debug("CPU MHz:", cpu)
@@ -960,7 +962,7 @@ class OTA:
     def update_if_available(self):
         self.connect()
         if not self._check_basic_resources():
-            print("Insufficient system resources")
+            self._info("Insufficient system resources")
             return False
         self._debug_resources()
         target = self.resolve_target()
@@ -976,11 +978,11 @@ class OTA:
                     self._perform_reset()
                     return True
                 self._debug("No update required")
-                print("No update required")
+                self._info("No update required")
                 return False
         if not self.cfg.get("force") and state and state.get("commit") == target["commit"]:
             self._debug("No update required")
-            print("No update required")
+            self._info("No update required")
             return False
         self._debug("Update required")
         tree = self.fetch_tree(target["commit"])
@@ -990,7 +992,7 @@ class OTA:
             candidates.append(entry)
             required += int(entry.get("size", 0))
         if not self._check_storage(required * 2):
-            print("Insufficient storage for update")
+            self._info("Insufficient storage for update")
             return False
         ref_for_download = target["ref"] if target["mode"] == "tag" else target["commit"]
         for entry in candidates:
