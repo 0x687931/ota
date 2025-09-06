@@ -257,11 +257,71 @@ class OTA:
         self.backup = BACKUP_DIR
         ensure_dirs(self.stage)
         ensure_dirs(self.backup)
+        self.chunk = CHUNK
         self._startup_cleanup()
 
     def _debug(self, *args):
         if self.cfg.get("debug"):
             print("[OTA]", *args)
+
+    # --------------------------------------------------------
+    # Resource checks
+
+    def _cpu_mhz(self):
+        if MICROPYTHON:
+            try:
+                return int(machine.freq() // 1000000)
+            except Exception:
+                return None
+        try:  # pragma: no cover - best effort
+            import psutil  # type: ignore
+            freq = getattr(psutil.cpu_freq(), "current", None)
+            return int(freq) if freq else None
+        except Exception:  # pragma: no cover
+            return None
+
+    def _mem_free(self):
+        try:
+            import gc
+            return gc.mem_free()  # type: ignore
+        except Exception:
+            try:  # pragma: no cover - best effort on CPython
+                import psutil  # type: ignore
+                return int(psutil.virtual_memory().available)
+            except Exception:
+                return None
+
+    def _storage_free(self):
+        try:
+            st = os.statvfs(".")
+            try:
+                return st.f_bavail * st.f_frsize
+            except AttributeError:
+                return st[4] * st[1]
+        except Exception:
+            return None
+
+    def _check_basic_resources(self):
+        free_mem = self._mem_free()
+        if free_mem is not None:
+            self.chunk = max(256, min(CHUNK, free_mem // 4))
+            min_mem = int(self.cfg.get("min_free_mem", 0))
+            if free_mem < min_mem:
+                return False
+        min_cpu = self.cfg.get("min_cpu_mhz")
+        if min_cpu is not None:
+            cpu = self._cpu_mhz()
+            if cpu is not None and cpu < min_cpu:
+                return False
+        return True
+
+    def _check_storage(self, required):
+        free = self._storage_free()
+        min_storage = int(self.cfg.get("min_free_storage", 0))
+        need = max(required, min_storage)
+        if free is not None and free < need:
+            return False
+        return True
 
     # --------------------------------------------------------
     # Boot safety
@@ -447,7 +507,7 @@ class OTA:
                     for chunk in http_reader(r)(n):
                         f.write(chunk)
                         yield chunk
-                digest = git_blob_sha1_stream(size, reader, CHUNK)
+                digest = git_blob_sha1_stream(size, reader, self.chunk)
                 f.flush()
                 if hasattr(os, "fsync"):
                     os.fsync(f.fileno())
@@ -480,7 +540,7 @@ class OTA:
         crc = 0
         total = 0
         with open(tmp, "wb") as f:
-            for block in http_reader(r)(CHUNK):
+            for block in http_reader(r)(self.chunk):
                 total += len(block)
                 h.update(block)
                 crc = _crc32_update(crc, block)
@@ -655,10 +715,10 @@ class OTA:
             )
             # verify again from disk to be safe
             if fi.get("sha256"):
-                if sha256_file(dest) != fi["sha256"]:
+                if sha256_file(dest, self.chunk) != fi["sha256"]:
                     raise OTAError("sha256 mismatch after write for " + rel)
             elif fi.get("crc32") is not None:
-                if crc32_file(dest) != int(fi["crc32"]):
+                if crc32_file(dest, self.chunk) != int(fi["crc32"]):
                     raise OTAError("crc32 mismatch after write for " + rel)
             self._debug("Hash OK for", rel)
         # swap and optional deletes
@@ -674,6 +734,9 @@ class OTA:
 
     def update_if_available(self):
         self.connect()
+        if not self._check_basic_resources():
+            print("Insufficient system resources")
+            return False
         target = self.resolve_target()
         self._debug("Resolving target:", target)
         if target["mode"] == "tag":
@@ -691,8 +754,16 @@ class OTA:
             print("No update required")
             return False
         tree = self.fetch_tree(target["commit"])
-        ref_for_download = target["ref"] if target["mode"] == "tag" else target["commit"]
+        candidates = []
+        required = 0
         for entry in self.iter_candidates(tree):
+            candidates.append(entry)
+            required += int(entry.get("size", 0))
+        if not self._check_storage(required * 2):
+            print("Insufficient storage for update")
+            return False
+        ref_for_download = target["ref"] if target["mode"] == "tag" else target["commit"]
+        for entry in candidates:
             self.stream_and_verify_git(entry, ref_for_download)
         self.stage_and_swap(target["ref"])
         self._debug("Resetting device")
