@@ -259,6 +259,10 @@ class OTA:
         ensure_dirs(self.backup)
         self._startup_cleanup()
 
+    def _debug(self, *args):
+        if self.cfg.get("debug"):
+            print("[OTA]", *args)
+
     # --------------------------------------------------------
     # Boot safety
 
@@ -303,6 +307,7 @@ class OTA:
                 attempts += 1
         if not sta.isconnected():
             raise OTAError("Wi Fi connection failed")
+        self._debug("Connected to Wi-Fi:", sta.ifconfig()[0])
 
     def _headers(self):
         h = {"Accept": "application/vnd.github+json"}
@@ -330,6 +335,7 @@ class OTA:
             kwargs["stream"] = raw
         if timeout is not None:
             kwargs["timeout"] = timeout
+        self._debug("GET", url)
         r = requests.get(url, **kwargs)
         status = getattr(r, "status_code", 200)
         if status >= 400:
@@ -430,6 +436,7 @@ class OTA:
         url = "https://raw.githubusercontent.com/%s/%s/%s/%s" % (
             self.cfg["owner"], self.cfg["repo"], ref, rel
         )
+        self._debug("Downloading:", rel)
         r = self._get(url, raw=True)
         try:
             tmp = self._stage_path(rel) + ".tmp"
@@ -459,6 +466,7 @@ class OTA:
             except OSError:
                 pass
             os.rename(tmp, final_)
+            self._debug("Hash OK for", rel)
         finally:
             try:
                 r.close()
@@ -502,6 +510,7 @@ class OTA:
 
     def stage_and_swap(self, applied_ref, deletes=None, safe_tail=None):
         applied = []
+        self._debug("Applying update:", applied_ref)
         try:
             # move staged files into place
             for root, dirs, files in _walk(self.stage):
@@ -549,6 +558,7 @@ class OTA:
                                     pass
             self._write_state(applied_ref)
         except Exception:
+            self._debug("Rollback triggered")
             # best effort rollback
             for target, backup in reversed(applied):
                 try:
@@ -635,6 +645,7 @@ class OTA:
             )
             dest = self._stage_path(rel)
             ensure_dirs(dest.rpartition("/")[0])
+            self._debug("Downloading:", rel)
             self._download_asset(
                 raw_url,
                 dest,
@@ -649,6 +660,7 @@ class OTA:
             elif fi.get("crc32") is not None:
                 if crc32_file(dest) != int(fi["crc32"]):
                     raise OTAError("crc32 mismatch after write for " + rel)
+            self._debug("Hash OK for", rel)
         # swap and optional deletes
         self.stage_and_swap(version, deletes=manifest.get("deletes", []))
         # optional post update hook
@@ -663,11 +675,13 @@ class OTA:
     def update_if_available(self):
         self.connect()
         target = self.resolve_target()
+        self._debug("Resolving target:", target)
         if target["mode"] == "tag":
             # try manifest path first
             res = self._stable_with_manifest(target["release_json"], target["ref"])
             if res is not None:
                 if res.get("updated"):
+                    self._debug("Resetting device")
                     machine.reset()
                     return True
                 print("No update required")
@@ -681,6 +695,7 @@ class OTA:
         for entry in self.iter_candidates(tree):
             self.stream_and_verify_git(entry, ref_for_download)
         self.stage_and_swap(target["ref"])
+        self._debug("Resetting device")
         machine.reset()
         return True
 
