@@ -13,8 +13,15 @@ class Resp:
 
 def test_is_permitted_filters(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    cfg = {'owner': 'o', 'repo': 'r', 'allow': ['allowed', 'exact.txt'], 'ignore': ['allowed/skip']}
+    cfg = {
+        'owner': 'o',
+        'repo': 'r',
+        'allow': ['/allowed/', '/exact.txt'],
+        'ignore': ['/allowed/skip/'],
+    }
     client = OTA(cfg)
+    assert client._allow == ('allowed', 'exact.txt')
+    assert client._ignore == ('allowed/skip',)
     assert client._is_permitted('exact.txt')
     assert client._is_permitted('allowed/file.txt')
     assert not client._is_permitted('other/file.txt')
