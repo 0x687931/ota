@@ -17,6 +17,10 @@ import json
 import os
 import sys
 from time import sleep
+try:
+    import ubinascii as binascii  # type: ignore
+except Exception:  # pragma: no cover - CPython
+    import binascii  # type: ignore
 
 # Detect if running under MicroPython
 MICROPYTHON = sys.implementation.name == "micropython"
@@ -89,7 +93,12 @@ def git_blob_sha1_stream(total_size, reader, chunk):
         h.update(data)
     if remaining != 0:
         raise ValueError("Size mismatch")
-    return h.hexdigest()
+    # ``uhashlib`` objects on MicroPython lack ``hexdigest``; fall back to
+    # ``digest`` plus ``binascii.hexlify`` to remain compatible with the
+    # minimal standard library.
+    if hasattr(h, "hexdigest"):
+        return h.hexdigest()
+    return binascii.hexlify(h.digest()).decode()
 
 
 def http_reader(resp):
