@@ -315,6 +315,8 @@ class OTA:
     # Path filtering
 
     def _is_permitted(self, path: str) -> bool:
+        # normalise before matching
+        path = self._normalize_path(path)
         if self._allow:
             if path not in self._allow:
                 if not self._allow_prefixes or not any(path.startswith(p) for p in self._allow_prefixes):
@@ -544,15 +546,13 @@ class OTA:
         r = requests.get(url, **kwargs)
         status = getattr(r, "status_code", 200)
         if status >= 400:
-            try:
-                body = getattr(r, "text", "")
-            except Exception:
-                body = ""
+            # keep error strings short and robust on MicroPython
+            body = ""
             try:
                 r.close()
             except Exception:
                 pass
-            raise OTAError("HTTP {} {}".format(status, (body[:80] if isinstance(body, str) else "")))
+            raise OTAError("HTTP {}".format(status))
         return r
 
     def _get_json(self, url: str):
@@ -651,7 +651,9 @@ class OTA:
         r = self._get(url, raw=True)
         try:
             tmp = self._stage_path(rel) + ".tmp"
-            ensure_dirs(tmp.rpartition("/")[0])
+            d = tmp.rpartition("/")[0]
+            if d:
+                ensure_dirs(d)
             f = open(tmp, "wb")
             try:
                 def reader(n):
@@ -671,7 +673,9 @@ class OTA:
                     pass
                 raise OTAError("hash mismatch for " + rel)
             final_ = self._stage_path(rel)
-            ensure_dirs(final_.rpartition("/")[0])
+            d = final_.rpartition("/")[0]
+            if d:
+                ensure_dirs(d)
             try:
                 os.remove(final_)
             except OSError:
@@ -990,9 +994,13 @@ class OTA:
         required = 0
         for entry in self.iter_candidates(tree):
             candidates.append(entry)
-            required += int(entry.get("size", 0))
+            sz = int(entry.get("size", 0))
+            required += sz
+            # early stop if storage already known to be insufficient
+            if not self._check_storage(required * 2):
+                break
         if not self._check_storage(required * 2):
-            self._info("Insufficient storage for update")
+            print("Insufficient storage for update")
             return False
         ref_for_download = target["ref"] if target["mode"] == "tag" else target["commit"]
         for entry in candidates:
