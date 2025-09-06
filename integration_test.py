@@ -1,14 +1,14 @@
 """Toggle update channel and perform a dry run against the configured repo."""
 
 import json
-from ota_client import OtaClient
+from ota import OTA
 
 
 def run(channel):
     with open("ota_config.json") as f:
         cfg = json.load(f)
     cfg["channel"] = channel
-    client = OtaClient(cfg)
+    client = OTA(cfg)
     # This is a dry run – in real usage ``update_if_available`` would
     # download and apply updates.  Here we simply resolve the target to
     # demonstrate channel selection.

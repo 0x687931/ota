@@ -1,5 +1,5 @@
 import os
-from ota_updater import OTAUpdater
+from ota import OTA
 
 
 def test_startup_rollback(tmp_path, monkeypatch):
@@ -10,7 +10,7 @@ def test_startup_rollback(tmp_path, monkeypatch):
         f.write('old')
     with open('.ota_stage/app.txt', 'w') as f:
         f.write('new')
-    OTAUpdater({}, log=False)
+    OTA({})
     assert (tmp_path / 'app.txt').read_text() == 'old'
     assert os.listdir('.ota_backup') == []
     assert os.listdir('.ota_stage') == []
@@ -22,5 +22,5 @@ def test_startup_stage_cleanup(tmp_path, monkeypatch):
     with open('.ota_stage/app.txt', 'w') as f:
         f.write('new')
     os.makedirs('.ota_backup', exist_ok=True)
-    OTAUpdater({}, log=False)
+    OTA({})
     assert os.listdir('.ota_stage') == []

@@ -1,7 +1,7 @@
-"""Example entry point for the ``OtaClient``."""
+"""Example entry point for the ``OTA`` updater."""
 
 import json
-from ota_client import OtaClient
+from ota import OTA
 
 
 def load_config():
@@ -19,7 +19,7 @@ def load_config():
 
 def main():
     cfg = load_config()
-    ota = OtaClient(cfg)
+    ota = OTA(cfg)
     try:
         ota.connect()
         ota.update_if_available()

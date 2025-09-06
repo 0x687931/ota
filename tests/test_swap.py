@@ -1,7 +1,6 @@
 import os
-import os
 import pytest
-from ota_client import OtaClient
+from ota import OTA, ensure_dirs
 
 
 def _write(path, data):
@@ -12,11 +11,11 @@ def _write(path, data):
 
 def test_stage_and_swap(tmp_path, monkeypatch):
     cfg = {"owner": "o", "repo": "r"}
-    c = OtaClient(cfg)
-    c.stage_dir = str(tmp_path / "stage")
-    c.backup_dir = str(tmp_path / "backup")
-    c.ensure_dirs(c.stage_dir)
-    c.ensure_dirs(c.backup_dir)
+    c = OTA(cfg)
+    c.stage = str(tmp_path / "stage")
+    c.backup = str(tmp_path / "backup")
+    ensure_dirs(c.stage)
+    ensure_dirs(c.backup)
     monkeypatch.chdir(tmp_path)
     # existing file
     _write(tmp_path / "app.txt", b"old")
@@ -30,11 +29,11 @@ def test_stage_and_swap(tmp_path, monkeypatch):
 
 def test_stage_and_swap_rollback(tmp_path, monkeypatch):
     cfg = {"owner": "o", "repo": "r"}
-    c = OtaClient(cfg)
-    c.stage_dir = str(tmp_path / "stage")
-    c.backup_dir = str(tmp_path / "backup")
-    c.ensure_dirs(c.stage_dir)
-    c.ensure_dirs(c.backup_dir)
+    c = OTA(cfg)
+    c.stage = str(tmp_path / "stage")
+    c.backup = str(tmp_path / "backup")
+    ensure_dirs(c.stage)
+    ensure_dirs(c.backup)
     monkeypatch.chdir(tmp_path)
     _write(tmp_path / "app.txt", b"orig")
     _write(tmp_path / "stage" / "app.txt", b"new")

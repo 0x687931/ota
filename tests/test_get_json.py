@@ -1,5 +1,5 @@
 import pytest
-from ota_client import OtaClient, OTAError
+from ota import OTA, OTAError
 
 
 class Resp:
@@ -11,8 +11,12 @@ class Resp:
 
 
 def test_get_json_http_error():
-    client = OtaClient({"owner": "o", "repo": "r"})
-    client._get = lambda url, raw=False: Resp()
+    client = OTA({"owner": "o", "repo": "r"})
+
+    def raise_err(url, raw=False):
+        raise OTAError("HTTP 404 Not Found")
+
+    client._get = raise_err
     with pytest.raises(OTAError) as excinfo:
         client._get_json("http://example.com")
     msg = str(excinfo.value)

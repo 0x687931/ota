@@ -1,5 +1,5 @@
 import os
-from ota_client import OtaClient
+from ota import OTA
 
 
 def test_client_startup_rollback(tmp_path, monkeypatch):
@@ -10,7 +10,7 @@ def test_client_startup_rollback(tmp_path, monkeypatch):
         f.write('old')
     with open('.ota_stage/app.txt', 'w') as f:
         f.write('new')
-    OtaClient({'owner': 'o', 'repo': 'r'})
+    OTA({'owner': 'o', 'repo': 'r'})
     assert (tmp_path / 'app.txt').read_text() == 'old'
     assert os.listdir('.ota_backup') == []
     assert os.listdir('.ota_stage') == []
