@@ -1,5 +1,7 @@
 # MicroPython OTA Updater
 
+This project was originally forked from [kevinmcaleer/ota](https://github.com/kevinmcaleer/ota) by Kevin McAleer.
+
 Robust over‑the‑air (OTA) update system for MicroPython devices.  The updater
 can pull application bundles either from the latest GitHub release
 (``stable`` channel) or from the tip of a development branch (``developer``
