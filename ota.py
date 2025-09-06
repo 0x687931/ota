@@ -283,6 +283,9 @@ class OTA:
         self._ignore_prefixes = tuple(i + "/" for i in ignore) if ignore else None
         self._init_adapt_state()
         self._startup_cleanup()
+        # Trace active filters once per run
+        self._debug("Filter allow:", self._allow)
+        self._debug("Filter ignore:", self._ignore)
 
     def _debug(self, *args):
         if self.cfg.get("debug"):
@@ -928,6 +931,7 @@ class OTA:
         for fi in manifest.get("files", []):
             rel = self._normalize_path(fi["path"])
             if not self._is_permitted(rel):
+                self._debug("Skip not permitted:", rel)
                 continue
             raw_url = "https://raw.githubusercontent.com/%s/%s/%s/%s" % (
                 self.cfg["owner"], self.cfg["repo"], tag, rel
@@ -954,6 +958,8 @@ class OTA:
             d = self._normalize_path(d)
             if self._is_permitted(d):
                 deletes.append(d)
+            else:
+                self._debug("Skip delete not permitted:", d)
         self.stage_and_swap(version, commit, deletes=deletes)
         hook = manifest.get("post_update")
         if hook:
