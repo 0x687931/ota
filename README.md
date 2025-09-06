@@ -61,11 +61,15 @@ staged before an atomic swap with rollback support.
      "http_timeout_sec": 20,
      "retries": 3,
      "backoff_sec": 3,
+     "reset_mode": "hard",
      "debug": false
    }
    ```
 
    Set `debug` to `true` to enable verbose logging for troubleshooting.
+   The `reset_mode` field controls how the device restarts after an update:
+   `hard` (default) uses `machine.reset()`, `soft` attempts `machine.soft_reset()`,
+   and `none` skips resetting.
 
    The configuration fields are:
 
@@ -84,6 +88,8 @@ staged before an atomic swap with rollback support.
     the larger of the provided values.
   - `retries` (integer) – number of retry attempts.
   - `backoff_sec` (integer) – delay between retries in seconds.
+  - `reset_mode` (string) – `hard` for a full reset (default), `soft` for a
+    soft reset when supported, or `none` to disable automatic resets.
   - `debug` (boolean) – set to `true` for verbose logging.
 
    Booleans must use lowercase `true` or `false` without quotes.
