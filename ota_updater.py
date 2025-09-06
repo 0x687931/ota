@@ -19,6 +19,13 @@ import hmac
 import sys
 from time import sleep
 
+
+def _hexdigest(h):
+    """Return hex digest for hash/hmac objects on both CPython and MicroPython."""
+    if hasattr(h, "hexdigest"):
+        return h.hexdigest()
+    return binascii.hexlify(h.digest()).decode()
+
 # Detect if running under MicroPython
 MICROPYTHON = sys.implementation.name == "micropython"
 
@@ -57,7 +64,7 @@ def sha256_file(path: str, chunk_size: int = CHUNK_SIZE) -> str:
             if not block:
                 break
             h.update(block)
-    return h.hexdigest()
+    return _hexdigest(h)
 
 
 def crc32_file(path: str, chunk_size: int = CHUNK_SIZE) -> int:
@@ -96,7 +103,7 @@ def sha1_git_blob_stream(total_size: int, reader, chunk_size: int = CHUNK_SIZE) 
         h.update(chunk)
     if remaining != 0:
         raise OTAError("size mismatch while hashing")
-    return h.hexdigest()
+    return _hexdigest(h)
 
 
 class OTAError(Exception):
@@ -192,7 +199,7 @@ class OTAUpdater:
         tmp = manifest.copy()
         tmp.pop("signature", None)
         data = json.dumps(tmp, sort_keys=True, separators=(",", ":")).encode()
-        expected = hmac.new(key.encode(), data, hashlib.sha256).hexdigest()
+        expected = _hexdigest(hmac.new(key.encode(), data, hashlib.sha256))
         if not hmac.compare_digest(expected, sig):
             raise OTAError("manifest signature mismatch")
 
@@ -337,7 +344,7 @@ class OTAUpdater:
         resp.close()
         if expected_size is not None and total != expected_size:
             raise OTAError("size mismatch for {}".format(dest))
-        sha = h.hexdigest()
+        sha = _hexdigest(h)
         crc = crc & 0xFFFFFFFF
         if expected_sha and sha != expected_sha:
             raise OTAError("hash mismatch for {}".format(dest))
