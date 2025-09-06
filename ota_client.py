@@ -154,7 +154,19 @@ class OtaClient:
         if raw:
             headers["Accept"] = "application/octet-stream"
         self._debug("GET", url)
-        r = requests.get(url, headers=headers, stream=raw)
+        connect_timeout = self.cfg.get("connect_timeout_sec")
+        read_timeout = self.cfg.get("http_timeout_sec")
+        timeout = None
+        if connect_timeout is not None and read_timeout is not None:
+            timeout = (connect_timeout, read_timeout)
+        elif connect_timeout is not None:
+            timeout = connect_timeout
+        elif read_timeout is not None:
+            timeout = read_timeout
+        if timeout is not None:
+            r = requests.get(url, headers=headers, stream=raw, timeout=timeout)
+        else:
+            r = requests.get(url, headers=headers, stream=raw)
         self._debug("->", getattr(r, "status_code", "?"))
         return r
 
