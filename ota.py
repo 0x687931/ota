@@ -764,19 +764,27 @@ class OTA:
         target = self.resolve_target()
         self._debug("Resolving target:", target)
         state = self._read_state()
+        self._debug("Installed version:", state)
+        self._debug(
+            "Repo version:", {"ref": target["ref"], "commit": target["commit"]}
+        )
         if target["mode"] == "tag":
             # try manifest path first
             res = self._stable_with_manifest(target["release_json"], target["ref"], target["commit"])
             if res is not None:
                 if res.get("updated"):
+                    self._debug("Update required")
                     self._perform_reset()
                     return True
+                self._debug("No update required")
                 print("No update required")
                 return False
         # developer path or stable without manifest
         if state and state.get("commit") == target["commit"]:
+            self._debug("No update required")
             print("No update required")
             return False
+        self._debug("Update required")
         tree = self.fetch_tree(target["commit"])
         candidates = []
         required = 0
