@@ -21,10 +21,10 @@ def test_stage_and_swap(tmp_path, monkeypatch):
     _write(tmp_path / "app.txt", b"old")
     # staged replacement
     _write(tmp_path / "stage" / "app.txt", b"new")
-    c.stage_and_swap("ref123")
+    c.stage_and_swap("ref123", "c1")
     assert (tmp_path / "app.txt").read_bytes() == b"new"
     with open(tmp_path / "version.json") as f:
-        assert f.read().strip() == '{"ref": "ref123"}'
+        assert f.read().strip() == '{"ref": "ref123", "commit": "c1"}'
 
 
 def test_stage_and_swap_rollback(tmp_path, monkeypatch):
@@ -48,7 +48,7 @@ def test_stage_and_swap_rollback(tmp_path, monkeypatch):
 
     monkeypatch.setattr(os, "rename", failing)
     with pytest.raises(OSError):
-        c.stage_and_swap("ref")
+        c.stage_and_swap("ref", "commit")
     # original file restored
     assert (tmp_path / "app.txt").read_bytes() == b"orig"
     assert not (tmp_path / "version.json").exists()
