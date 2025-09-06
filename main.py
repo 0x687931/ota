@@ -5,17 +5,31 @@ import os
 
 from ota import OTA
 
-try:  # Python 3.11+
+try:  # CPython 3.11
     import tomllib  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover - earlier versions
+except Exception:  # MicroPython or earlier CPython
     tomllib = None
+
+
+def _splitext(p: str):
+    i = p.rfind(".")
+    return (p[:i], p[i:]) if i != -1 else (p, "")
+
+
+def _basename(p: str):
+    j = p.rfind("/")
+    return p[j + 1:] if j != -1 else p
 
 
 def load_config(config_path: str = "ota_config.json"):
     """Load configuration from JSON, YAML or TOML based on extension."""
-    with open(config_path, "r") as f:
-        text = f.read()
-    ext = os.path.splitext(config_path)[1].lower()
+    try:
+        with open(config_path, "r") as f:
+            text = f.read()
+    except Exception as exc:
+        raise RuntimeError("Config file not found: {}".format(config_path)) from exc
+    _, ext = _splitext(config_path)
+    ext = ext.lower()
     if ext in (".yaml", ".yml"):
         try:
             import yaml
@@ -24,7 +38,7 @@ def load_config(config_path: str = "ota_config.json"):
         cfg = yaml.safe_load(text) or {}
     elif ext == ".toml":
         if tomllib is None:
-            raise RuntimeError("TOML config requires Python 3.11 or the tomllib module")
+            raise RuntimeError("TOML config requires CPython 3.11 or tomllib. Use JSON on device.")
         cfg = tomllib.loads(text)
     else:
         cfg = json.loads(text)
@@ -33,7 +47,7 @@ def load_config(config_path: str = "ota_config.json"):
     repo = str(cfg.get("repo", "")).strip().upper()
     if not owner or owner in placeholders or not repo or repo in placeholders:
         raise ValueError(
-            f"{os.path.basename(config_path)} must define non-placeholder 'owner' and 'repo' values"
+            "{} must define non placeholder 'owner' and 'repo' values".format(_basename(config_path))
         )
     return cfg
 
@@ -42,7 +56,6 @@ def main():
     cfg = load_config()
     ota = OTA(cfg)
     try:
-        ota.connect()
         ota.update_if_available()
     except Exception as exc:
         print("OTA update failed:", exc)
