@@ -274,11 +274,13 @@ class OTA:
         ensure_dirs(self.backup)
         self.chunk = int(cfg.get("chunk", CHUNK))
         allow = cfg.get("allow") or []
-        allow = [a.rstrip("/") for a in allow if a]
+        allow = [a.strip("/") for a in allow if a]
         self._allow = tuple(allow) or None
+        self._allow_prefixes = tuple(a + "/" for a in allow) if allow else None
         ignore = cfg.get("ignore") or []
-        ignore = [i.rstrip("/") for i in ignore if i]
+        ignore = [i.strip("/") for i in ignore if i]
         self._ignore = tuple(ignore) or None
+        self._ignore_prefixes = tuple(i + "/" for i in ignore) if ignore else None
         self._init_adapt_state()
         self._startup_cleanup()
 
@@ -308,10 +310,15 @@ class OTA:
     # Path filtering
 
     def _is_permitted(self, path: str) -> bool:
-        if self._allow and not any(path == a or path.startswith(a + "/") for a in self._allow):
-            return False
-        if self._ignore and any(path == i or path.startswith(i + "/") for i in self._ignore):
-            return False
+        if self._allow:
+            if path not in self._allow:
+                if not self._allow_prefixes or not any(path.startswith(p) for p in self._allow_prefixes):
+                    return False
+        if self._ignore:
+            if path in self._ignore:
+                return False
+            if self._ignore_prefixes and any(path.startswith(p) for p in self._ignore_prefixes):
+                return False
         return True
 
     # --------------------------------------------------------
