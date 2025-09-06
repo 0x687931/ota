@@ -80,6 +80,8 @@ staged before an atomic swap with rollback support.
    - `ignore` (list of strings) – paths to skip during updates.
    - `chunk` (integer) – download buffer size in bytes.
    - `connect_timeout_sec` / `http_timeout_sec` (integer) – network timeout values.
+     On MicroPython these are merged into a single effective timeout computed as
+     the larger of the two values.
    - `retries` (integer) – number of retry attempts.
    - `backoff_sec` (integer) – delay between retries in seconds.
    - `debug` (boolean) – set to `true` for verbose logging.
