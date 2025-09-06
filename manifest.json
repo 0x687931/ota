@@ -1,0 +1,138 @@
+{
+  "files": [
+    {
+      "crc32": 761358225,
+      "path": ".github/workflows/python-publish.yml",
+      "sha256": "a9e752e2ec2436b79c8596e1fe1624dda516fd56e47ffb1e5b7c14ae3648803b",
+      "size": 1084
+    },
+    {
+      "crc32": 2469723005,
+      "path": ".github/workflows/release-manifest.yml",
+      "sha256": "6513c727e36348a049d5317cb1d42becb28b026d5abd49f8f143ee7301379d8b",
+      "size": 597
+    },
+    {
+      "crc32": 2501806252,
+      "path": "LICENSE",
+      "sha256": "206c3544d5f007b567f2bb017761fb08c7a08335b350f5c9e293ea918dabc542",
+      "size": 1066
+    },
+    {
+      "crc32": 1380881335,
+      "path": "README.md",
+      "sha256": "73547c2cf43c590b222edb845153cb07d42eb6a2755eada5def626fc209d808e",
+      "size": 7268
+    },
+    {
+      "crc32": 2012784366,
+      "path": "integration_test.py",
+      "sha256": "70ef5b0cd55ff044c764e40b88d27dd9ec423b8d541a87e49cd1304250ccd151",
+      "size": 716
+    },
+    {
+      "crc32": 378617179,
+      "path": "main.py",
+      "sha256": "c53e8b7f6a4115dd0616fe1fa6e96a4e84d1ddc61712855a1d73c3dba09b6104",
+      "size": 1892
+    },
+    {
+      "crc32": 3537119672,
+      "path": "manifest_gen.py",
+      "sha256": "481071bdbb6d79e647286270e44786e40eab8829699e41a51b70f2644dde56d7",
+      "size": 4090
+    },
+    {
+      "crc32": 4175637568,
+      "path": "ota.py",
+      "sha256": "c6c26cac7186b6a2bfc93b844adf6d55d2030469bc8cc02fa956aa321fe500ac",
+      "size": 33230
+    },
+    {
+      "crc32": 3461730327,
+      "path": "ota_config.json",
+      "sha256": "1cbcc409045b4ce509bb06af3709d420c8ad6348424d3a766dc4e7d4fba8da53",
+      "size": 1682
+    },
+    {
+      "crc32": 914409568,
+      "path": "tests/test_force.py",
+      "sha256": "6d9eb092a8a71eeed70e2dae3d1ea7517f62d80565eee6eef3506205085b707a",
+      "size": 1152
+    },
+    {
+      "crc32": 3480621818,
+      "path": "tests/test_get_json.py",
+      "sha256": "a3a2ad328717578ab50cae0be26fa21badf1535102e32aa4bd4dbe9410b76cf4",
+      "size": 580
+    },
+    {
+      "crc32": 27968309,
+      "path": "tests/test_hash.py",
+      "sha256": "895b4213a4da2e761ecf2d15c7db7d77f537f977ffd2188178727be5cd21ba6c",
+      "size": 736
+    },
+    {
+      "crc32": 698392430,
+      "path": "tests/test_load_config.py",
+      "sha256": "c38503d8a96d36e1a3a4665c60080999305bf9d2677887566cbea8b3c9e8f2de",
+      "size": 612
+    },
+    {
+      "crc32": 3863878198,
+      "path": "tests/test_manifest_sig.py",
+      "sha256": "339781f02a13b45a73d316065bf0d0f886e4ed274248cad1ab69e7b5d4a1a641",
+      "size": 694
+    },
+    {
+      "crc32": 416123090,
+      "path": "tests/test_resources.py",
+      "sha256": "309198b9831819d05c1dd74fae4178ddd6f0e9b7a18a3132d2b33a87ab0b456d",
+      "size": 761
+    },
+    {
+      "crc32": 1155999940,
+      "path": "tests/test_staging.py",
+      "sha256": "1ff612dc8c3c3efdb56dea561cce1b055d367c93a5485c77bbf546047faa9186",
+      "size": 882
+    },
+    {
+      "crc32": 1770698743,
+      "path": "tests/test_startup.py",
+      "sha256": "26a0836abbfd0aad4d69c502b9232f5758f91c5b6cc244a0e05e5143ed78ac21",
+      "size": 1375
+    },
+    {
+      "crc32": 2935151956,
+      "path": "tests/test_startup_client.py",
+      "sha256": "1faa9232a37820dc5c90094aecfbff7d16bd82ac365886c85338d06111a8d907",
+      "size": 530
+    },
+    {
+      "crc32": 3175266878,
+      "path": "tests/test_stream.py",
+      "sha256": "691d24e7ecfd141a43cf058a5256e311c9a384d42399363b23ed9552a51c1a2b",
+      "size": 1185
+    },
+    {
+      "crc32": 1662787014,
+      "path": "tests/test_swap.py",
+      "sha256": "8a9bed20118f3f5afd731d6fe0102effdecfeebdc047611f854552fb30bbbf72",
+      "size": 1652
+    },
+    {
+      "crc32": 2117157456,
+      "path": "tests/test_timeout.py",
+      "sha256": "2fbbd87c3f9757272709cc662396103430ae252d29628ed7f74eb88672c5e16d",
+      "size": 1168
+    },
+    {
+      "crc32": 893498947,
+      "path": "tests/test_verify.py",
+      "sha256": "9cadf95589cb3b750ac217c23469d9485ec0bfcb5cf43a6186a6a5945f06f094",
+      "size": 2360
+    }
+  ],
+  "generated_at": "2025-09-06T05:04:33Z",
+  "version": "dev"
+}
