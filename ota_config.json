@@ -14,5 +14,6 @@
   "retries": 3,
   "backoff_sec": 3,
   "reset_mode": "hard",
+  "_reset_mode_comment": "hard for machine.reset(), soft for machine.soft_reset(), none to skip",
   "debug": false
 }
