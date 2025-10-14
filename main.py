@@ -3,7 +3,7 @@
 import json
 import os
 
-from ota import OTA
+from ota import OTA, ERROR_FILE
 
 try:  # CPython 3.11
     import tomllib  # type: ignore
@@ -52,13 +52,30 @@ def load_config(config_path: str = "ota_config.json"):
     return cfg
 
 
+def _write_error(error_msg: str):
+    """Persist error information for headless debugging."""
+    try:
+        tmp = ERROR_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"errors": [error_msg]}, f)
+            f.flush()
+            if hasattr(os, "fsync"):
+                os.fsync(f.fileno())
+        os.rename(tmp, ERROR_FILE)
+    except Exception:
+        # Best effort - don't fail if we can't write errors
+        pass
+
+
 def main():
     cfg = load_config()
     ota = OTA(cfg)
     try:
         ota.update_if_available()
     except Exception as exc:
-        print("OTA update failed:", exc)
+        error_msg = "OTA update failed: {}".format(str(exc))
+        print(error_msg)
+        _write_error(error_msg)
 
 
 if __name__ == "__main__":
