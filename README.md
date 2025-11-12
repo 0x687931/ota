@@ -122,7 +122,7 @@ print('README.md' in os.listdir('/'))  # Should print: True
 
 ### Next Steps
 - See [Usage](#usage) for production deployment with manifest-based releases
-- Enable [Security](#security-best-practices) with tokens and signed manifests
+- Enable [Security](#security-notes) with tokens and signed manifests
 - Configure [Headless Operation](#headless-operation) for remote devices
 - Set up [Delta Updates](#delta-updates) to reduce bandwidth by 60-95%
 
@@ -622,7 +622,8 @@ Error: no space left on device
   print(f"Free: {free_kb} KB")
   ```
 - Delete old files/logs
-- Exclude large files: `"ignore": ["data/", "*.bmp"]`
+- Exclude directories: `"ignore": ["data/", "images/"]`
+- Note: Only exact paths or directory prefixes supported (no wildcards like `*.bmp`)
 
 ### Debug Mode
 
