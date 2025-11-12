@@ -3,12 +3,18 @@
 import argparse, binascii, hashlib, hmac, io, json, os, time
 from pathlib import Path
 
-INCLUDE = ["ota.py", "main.py"]  # add folders with a trailing slash like "lib/"
+# Note: INCLUDE list is now set from CLI args, not hard-coded
+# Default includes ota.py and main.py if no --include or --file-list provided
+DEFAULT_INCLUDE = ["ota.py", "main.py"]
 
 
-def want(path: str) -> bool:
-    # allow only explicit include
-    for inc in INCLUDE:
+def want(path: str, include_list) -> bool:
+    """Check if path matches any pattern in include_list."""
+    # If no include list specified, allow all (rely on exclude filtering)
+    if not include_list:
+        return True
+    # Otherwise check against include patterns
+    for inc in include_list:
         if path == inc or path.startswith(inc.rstrip("/") + "/"):
             return True
     return False
@@ -72,21 +78,34 @@ def main():
 
     root = Path(args.root).resolve()
     chosen = set()
+
+    # Determine include list for want() filtering
+    # When using --file-list or --include, those paths are already filtered
+    # When using default (rglob), apply DEFAULT_INCLUDE filtering
+    use_want_filter = False
+    include_patterns = None
+
     if args.file_list:
+        # Explicit file list: no additional filtering needed
         for line in Path(args.file_list).read_text().splitlines():
             line = line.strip()
             if line and not line.startswith("#"):
                 chosen.add(root.joinpath(line).resolve())
+        use_want_filter = False
     elif args.include:
+        # Explicit include patterns: already filtered by glob
         import glob
         for pat in args.include:
             for p in glob.glob(str(root.joinpath(pat)), recursive=True):
                 chosen.add(Path(p).resolve())
+        use_want_filter = False
     else:
-        # default: include all regular files under root
+        # Default: include all files but filter with DEFAULT_INCLUDE
         for p in root.rglob("*"):
             if p.is_file():
                 chosen.add(p.resolve())
+        use_want_filter = True
+        include_patterns = DEFAULT_INCLUDE
 
     # apply excludes
     def excluded(p: Path) -> bool:
@@ -104,7 +123,8 @@ def main():
         if excluded(p):
             continue
         rel = norm(p, root)
-        if not want(rel):
+        # Only apply want() filter when using default mode (no CLI flags)
+        if use_want_filter and not want(rel, include_patterns):
             continue
         size = p.stat().st_size
         sha, crc = sha256_crc32(p)
@@ -112,10 +132,12 @@ def main():
 
     deletes = None
     if args.deletes:
+        # For deletes, only filter if using default mode
         deletes = [
             ln.strip()
             for ln in Path(args.deletes).read_text().splitlines()
-            if ln.strip() and not ln.startswith("#") and want(ln.strip())
+            if ln.strip() and not ln.startswith("#") and
+               (not use_want_filter or want(ln.strip(), include_patterns))
         ]
 
     manifest = build_manifest(args.version, files, deletes, args.post_update, args.key)

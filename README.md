@@ -422,14 +422,22 @@ Intelligent fallback between WiFi, Cellular, and LoRa connections for maximum re
 - RFM95/RFM96
 - LoRaWAN gateways
 
-### Benefits
+### Implementation Status
 
-- **90%+ connectivity reliability** vs 60-70% WiFi-only
-- **Automatic failover** when WiFi unavailable
-- **Cost optimization** for cellular deployments
-- **Essential for remote deployments** (weather stations, remote sensors, etc.)
+**Production Ready:**
+- ✅ **WiFi** - Fully implemented and tested on RP2040/Pico W
 
-**Note:** WiFi transport is fully implemented. Cellular and LoRa transports provide framework but require modem-specific implementation for production use. See `connectivity.py` for transport interface.
+**Framework Only (Requires Hardware-Specific Implementation):**
+- ⚠️ **Cellular** - AT command framework provided, requires modem-specific HTTP implementation
+- ⚠️ **LoRa** - SPI initialization provided, requires LoRa protocol and gateway integration
+
+**Potential Benefits** (when all transports implemented):
+- 90%+ connectivity reliability vs 60-70% WiFi-only
+- Automatic failover when WiFi unavailable
+- Cost optimization for cellular deployments
+- Essential for remote deployments (weather stations, remote sensors, etc.)
+
+**Note:** See `connectivity.py` for the transport abstraction interface. Cellular and LoRa implementations serve as starting points for hardware-specific development.
 
 ### Files
 
