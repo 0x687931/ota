@@ -862,13 +862,36 @@ class OTA:
 
         raise last_error
 
-    def _get_json(self, url: str):
+    def _get_json(self, url: str, max_size_kb=None):
+        """
+        Fetch and parse JSON from a URL with optional size validation.
+
+        Args:
+            url: The URL to fetch
+            max_size_kb: Maximum allowed response size in KB (None = no limit)
+
+        Raises:
+            OTAError: If response exceeds max_size_kb
+        """
         # Preemptive GC before large JSON allocation to prevent fragmentation
         import gc
         gc.collect()
 
         r = self._get(url, raw=False)
         try:
+            # Check Content-Length header if size limit is specified
+            if max_size_kb is not None:
+                max_bytes = max_size_kb * 1024
+                content_length = r.headers.get("Content-Length") or r.headers.get("content-length")
+                if content_length:
+                    size = int(content_length)
+                    if size > max_bytes:
+                        raise OTAError(
+                            "Response too large: %d bytes (limit: %d KB)" % (size, max_size_kb)
+                        )
+                    if self.cfg.get("debug"):
+                        self._debug("Response size: %d bytes (within %d KB limit)" % (size, max_size_kb))
+
             data = r.json()
             # Collect any parsing overhead immediately
             gc.collect()
@@ -920,10 +943,41 @@ class OTA:
     # Tree and candidates
 
     def fetch_tree(self, commit_sha):
+        """
+        Fetch the Git tree for a commit with size protection.
+
+        Args:
+            commit_sha: The commit SHA to fetch
+
+        Returns:
+            List of tree entries (files)
+
+        Raises:
+            OTAError: If tree response is too large or contains too many files
+        """
         url = "https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1" % (
             self.cfg["owner"], self.cfg["repo"], commit_sha
         )
-        return self._get_json(url)["tree"]
+
+        # Get size limits from config (None = no limit for backward compatibility)
+        max_size_kb = self.cfg.get("max_tree_size_kb")
+        max_files = self.cfg.get("max_tree_files")
+
+        # Fetch with optional size limit
+        tree_data = self._get_json(url, max_size_kb=max_size_kb)
+        tree = tree_data["tree"]
+
+        # Validate file count if limit specified
+        if max_files is not None:
+            file_count = len(tree)
+            if file_count > max_files:
+                raise OTAError(
+                    "Tree contains too many files: %d (limit: %d)" % (file_count, max_files)
+                )
+            if self.cfg.get("debug"):
+                self._debug("Tree file count: %d (within %d file limit)" % (file_count, max_files))
+
+        return tree
 
     def iter_candidates(self, tree):
         for entry in tree:
@@ -995,7 +1049,7 @@ class OTA:
             output_path = self._stage_path(rel) + ".tmp"
             result_hash = apply_delta(
                 old_file,
-                open(delta_path, "rb").read(),
+                delta_path,
                 output_path,
                 expected_hash=entry.get("sha256"),
                 chunk_size=self.chunk
@@ -1255,10 +1309,10 @@ class OTA:
                             except Exception:
                                 pass
                         # Track backup immediately to ensure rollback works if next rename fails
-                        applied.append((target, backup))
+                        applied.append(("replace", target, backup))
                     else:
                         # No backup created, track None
-                        applied.append((target, None))
+                        applied.append(("new", target, None))
                     os.rename(stage_path, target)
                     # Sync after applying new file
                     if hasattr(os, "sync"):
@@ -1282,7 +1336,7 @@ class OTA:
                                 os.sync()
                             except Exception:
                                 pass
-                        applied.append((None, bpath))
+                        applied.append(("delete", None, bpath))
             # optional conservative deletion for developer channel
             patterns = self.cfg.get("delete_patterns", [])
             if patterns:
@@ -1314,9 +1368,14 @@ class OTA:
                                             os.sync()
                                         except Exception:
                                             pass
-                                    applied.append((None, bpath))
+                                    applied.append(("delete", None, bpath))
                                 except Exception:
                                     pass
+            if hasattr(os, "sync"):
+                try:
+                    os.sync()
+                except Exception:
+                    pass
             self._write_state(applied_ref, applied_commit)
             if hasattr(os, "sync"):
                 try:
@@ -1326,15 +1385,33 @@ class OTA:
         except Exception:
             self._debug("Rollback triggered")
             rollback_errors = []
-            for target, backup in reversed(applied):
+            for op_type, target, backup in reversed(applied):
                 try:
-                    if backup and _exists(backup):
-                        if target and _exists(target):
+                    if op_type == "new":
+                        # Rollback new file: delete it
+                        self._debug("Rolling back new file: {}".format(target))
+                        if _exists(target):
                             os.remove(target)
-                        os.rename(backup, target or backup)
+                    elif op_type == "replace":
+                        # Rollback replace: restore from backup
+                        self._debug("Rolling back replace: {} from {}".format(target, backup))
+                        if backup and _exists(backup):
+                            if _exists(target):
+                                os.remove(target)
+                            os.rename(backup, target)
+                    elif op_type == "delete":
+                        # Rollback delete: restore deleted file from backup
+                        self._debug("Rolling back delete: restore from {}".format(backup))
+                        if backup and _exists(backup):
+                            # Extract original path from backup path
+                            original = backup[len(self.backup) + 1:] if backup.startswith(self.backup + "/") else backup
+                            ensure_dirs(original.rpartition("/")[0])
+                            os.rename(backup, original)
                 except Exception as e:
                     # Track rollback failures for debugging
-                    error_msg = "Failed to rollback {}: {}".format(target or backup, str(e))
+                    error_msg = "Failed to rollback {} ({}): {}".format(
+                        target or backup, op_type, str(e)
+                    )
                     rollback_errors.append(error_msg)
                     self._debug(error_msg)
             if rollback_errors:

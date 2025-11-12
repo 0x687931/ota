@@ -48,6 +48,70 @@ def _read_varint(data, offset):
     return result, offset
 
 
+def _read_varint_from_reader(reader):
+    """Read variable-length integer from ChunkedDeltaReader."""
+    result = 0
+    shift = 0
+    while True:
+        byte = reader.read_byte()
+        if byte is None:
+            raise DeltaError("Unexpected EOF reading varint")
+        result |= (byte & 0x7F) << shift
+        if not (byte & 0x80):
+            break
+        shift += 7
+        if shift > 28:
+            raise DeltaError("Varint too large")
+    return result
+
+
+class ChunkedDeltaReader:
+    """Streaming delta reader with fixed 64-byte buffer."""
+
+    BUFFER_SIZE = 64
+
+    def __init__(self, delta_path):
+        self.f = open(delta_path, "rb")
+        self.buffer = bytearray()
+        self.buffer_pos = 0
+        self.eof = False
+
+    def _refill_buffer(self):
+        if self.buffer_pos >= len(self.buffer) and not self.eof:
+            chunk = self.f.read(self.BUFFER_SIZE)
+            if not chunk:
+                self.eof = True
+                return False
+            self.buffer = bytearray(chunk)
+            self.buffer_pos = 0
+            return True
+        return self.buffer_pos < len(self.buffer)
+
+    def read_byte(self):
+        if self.buffer_pos >= len(self.buffer):
+            if not self._refill_buffer():
+                return None
+        byte = self.buffer[self.buffer_pos]
+        self.buffer_pos += 1
+        return byte
+
+    def read_bytes(self, n):
+        result = bytearray()
+        while len(result) < n:
+            if self.buffer_pos >= len(self.buffer):
+                if not self._refill_buffer():
+                    raise DeltaError("Unexpected EOF reading {} bytes".format(n))
+            available = min(n - len(result), len(self.buffer) - self.buffer_pos)
+            result.extend(self.buffer[self.buffer_pos:self.buffer_pos + available])
+            self.buffer_pos += available
+        return bytes(result)
+
+    def close(self):
+        if self.f:
+            self.f.close()
+            self.f = None
+
+
 def _write_varint(value):
     """Write variable-length integer."""
     result = bytearray()
@@ -58,9 +122,9 @@ def _write_varint(value):
     return bytes(result)
 
 
-def apply_delta(old_path, delta_data, output_path, expected_hash=None, chunk_size=512):
+def _apply_delta_legacy(old_path, delta_data, output_path, expected_hash=None, chunk_size=512):
     """
-    Apply binary delta to create new file.
+    Apply binary delta to create new file (legacy bytes-based implementation).
 
     Args:
         old_path: Path to original file
@@ -151,6 +215,117 @@ def apply_delta(old_path, delta_data, output_path, expected_hash=None, chunk_siz
             expected_hash, result_hash))
 
     return result_hash
+
+
+def apply_delta(old_path, delta_data_or_path, output_path, expected_hash=None, chunk_size=512):
+    """
+    Apply binary delta to create new file.
+
+    Supports both streaming (file path) and legacy (bytes) modes.
+
+    Args:
+        old_path: Path to original file
+        delta_data_or_path: Delta file path (str) or delta instructions (bytes)
+        output_path: Path for output file
+        expected_hash: Expected SHA256 of result (optional)
+        chunk_size: Read/write chunk size
+
+    Returns:
+        SHA256 hash of output file
+
+    Raises:
+        DeltaError: If delta is invalid or output hash mismatches
+    """
+    # Auto-detect mode: bytes = legacy, str = streaming
+    if isinstance(delta_data_or_path, bytes):
+        return _apply_delta_legacy(old_path, delta_data_or_path, output_path, expected_hash, chunk_size)
+
+    # Streaming mode using ChunkedDeltaReader
+    delta_path = delta_data_or_path
+    reader = None
+
+    try:
+        reader = ChunkedDeltaReader(delta_path)
+
+        # Verify delta header
+        magic = reader.read_bytes(8)
+        if magic != DELTA_MAGIC:
+            raise DeltaError("Invalid delta magic")
+
+        version = reader.read_byte()
+        if version != DELTA_VERSION:
+            raise DeltaError("Unsupported delta version: {}".format(version))
+
+        # Process delta instructions
+        output_hash = hashlib.sha256()
+
+        with open(old_path, "rb") as old_file, \
+             open(output_path, "wb") as new_file:
+
+            while True:
+                opcode = reader.read_byte()
+                if opcode is None:
+                    raise DeltaError("Unexpected EOF reading opcode")
+
+                if opcode == OP_END:
+                    break
+
+                elif opcode == OP_COPY_OLD:
+                    # Read copy position and length
+                    copy_offset = _read_varint_from_reader(reader)
+                    copy_length = _read_varint_from_reader(reader)
+
+                    if copy_length > MAX_COPY_SIZE:
+                        raise DeltaError("Copy size too large: {}".format(copy_length))
+
+                    # Copy from old file in chunks
+                    old_file.seek(copy_offset)
+                    remaining = copy_length
+                    while remaining > 0:
+                        chunk = min(chunk_size, remaining)
+                        data = old_file.read(chunk)
+                        if len(data) != chunk:
+                            raise DeltaError("Unexpected EOF in old file")
+                        new_file.write(data)
+                        output_hash.update(data)
+                        remaining -= chunk
+
+                elif opcode == OP_NEW_DATA:
+                    # Read insert length and data
+                    insert_length = _read_varint_from_reader(reader)
+
+                    if insert_length > MAX_INSERT_SIZE:
+                        raise DeltaError("Insert size too large: {}".format(insert_length))
+
+                    # Stream insert data in chunks
+                    remaining = insert_length
+                    while remaining > 0:
+                        chunk = min(chunk_size, remaining)
+                        data = reader.read_bytes(chunk)
+                        new_file.write(data)
+                        output_hash.update(data)
+                        remaining -= chunk
+
+                else:
+                    raise DeltaError("Unknown opcode: 0x{:02x}".format(opcode))
+
+            new_file.flush()
+            if hasattr(os, "fsync"):
+                os.fsync(new_file.fileno())
+
+        # Verify output hash if provided
+        result_hash = output_hash.hexdigest() if hasattr(output_hash, 'hexdigest') else \
+                      __import__('binascii').hexlify(output_hash.digest()).decode()
+
+        if expected_hash and result_hash != expected_hash:
+            raise DeltaError("Output hash mismatch: expected {}, got {}".format(
+                expected_hash, result_hash))
+
+        return result_hash
+
+    finally:
+        if reader:
+            reader.close()
 
 
 def create_delta(old_path, new_path, output_path=None, block_size=512):
