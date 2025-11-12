@@ -622,7 +622,8 @@ Error: no space left on device
   print(f"Free: {free_kb} KB")
   ```
 - Delete old files/logs
-- Exclude large files: `"ignore": ["data/", "*.bmp"]`
+- Exclude directories: `"ignore": ["data/", "images/"]`
+- Note: Only exact paths or directory prefixes supported (no wildcards like `*.bmp`)
 
 ### Debug Mode
 
