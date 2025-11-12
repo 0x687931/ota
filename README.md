@@ -43,6 +43,89 @@ staged before an atomic swap with rollback support.
   - Canary rollouts for staged deployment
   - Health-based update deferral
 
+## Quick Start
+
+Get your first OTA update running in 5 minutes on a Raspberry Pi Pico W.
+
+### Prerequisites
+- Raspberry Pi Pico W with MicroPython v1.20+ installed
+- GitHub account (free)
+- WiFi network (2.4GHz)
+- USB cable for initial setup
+
+### Step 1: Fork This Repository
+
+Fork this repository to your GitHub account so you can push firmware updates.
+
+### Step 2: Create Configuration
+
+Create `ota_config.json` with your details:
+
+```json
+{
+  "owner": "YOUR_GITHUB_USERNAME",
+  "repo": "ota",
+  "ssid": "YOUR_WIFI_SSID",
+  "password": "YOUR_WIFI_PASSWORD",
+  "channel": "developer",
+  "branch": "main",
+  "allow": ["README.md"],
+  "debug": true
+}
+```
+
+Replace `YOUR_GITHUB_USERNAME`, `YOUR_WIFI_SSID`, and `YOUR_WIFI_PASSWORD` with your actual values.
+
+### Step 3: Copy Files to Device
+
+Using [Thonny](https://thonny.org/) or [mpremote](https://docs.micropython.org/en/latest/reference/mpremote.html):
+
+**With Thonny:**
+1. Connect to "MicroPython (Raspberry Pi Pico)" interpreter
+2. Drag and drop these files: `ota.py`, `main.py`, `ota_config.json`
+
+**With mpremote:**
+```bash
+mpremote cp ota.py :
+mpremote cp main.py :
+mpremote cp ota_config.json :
+```
+
+### Step 4: Run First Update
+
+In the REPL:
+
+```python
+import main
+main.main()
+```
+
+**Expected output:**
+```
+Connecting to WiFi...
+Connected: 192.168.1.100
+Using developer channel: main
+Downloading: README.md (15KB)
+Update successful! Rebooting...
+```
+
+### Step 5: Verify
+
+After reboot:
+
+```python
+import os
+print('README.md' in os.listdir('/'))  # Should print: True
+```
+
+**Success!** Your device can now receive OTA updates.
+
+### Next Steps
+- See [Usage](#usage) for production deployment with manifest-based releases
+- Enable [Security](#security-best-practices) with tokens and signed manifests
+- Configure [Headless Operation](#headless-operation) for remote devices
+- Set up [Delta Updates](#delta-updates) to reduce bandwidth by 60-95%
+
 ## Usage
 
 1. Copy `ota.py` and `main.py` to the device.
@@ -469,6 +552,163 @@ After a successful update the device writes the new version to
 `version.json` and issues `machine.reset()` to boot into the new code.
 The manifest may include optional `post_update` and `rollback` hook
 scripts for custom actions.
+
+## Troubleshooting
+
+### Common Errors
+
+**WiFi Connection Failed**
+```
+Error: Timeout connecting to WiFi
+```
+**Solutions:**
+- Verify SSID and password are correct (case-sensitive)
+- Ensure 2.4GHz WiFi (Pico W doesn't support 5GHz)
+- Move device closer to router
+- Enable debug mode: `"debug": true`
+
+**HTTP 401 Unauthorized**
+```
+Error: GitHub API returned 401
+```
+**Solutions:**
+- For private repos: Add GitHub Personal Access Token to config
+- Create token at: https://github.com/settings/tokens (needs `repo` scope)
+- Add to config: `"token": "ghp_xxxxxxxxxxxx"`
+
+**HTTP 404 Not Found**
+```
+Error: Resource not found
+```
+**Solutions:**
+- Verify repository exists: `https://github.com/{owner}/{repo}`
+- For stable channel: Ensure at least one release exists
+- Check tag name matches exactly (including `v` prefix)
+
+**Out of Memory**
+```
+Error: memory allocation failed
+```
+**Solutions:**
+- Reduce chunk size: `"chunk": 256`
+- Free memory before update:
+  ```python
+  import gc
+  gc.collect()
+  import main
+  main.main()
+  ```
+- Remove unnecessary files from device
+
+**SHA Verification Failed**
+```
+Error: SHA1/SHA256 mismatch
+```
+**Solutions:**
+- Usually auto-retries (check `retries` config)
+- Check network stability (weak WiFi signal)
+- Increase retries: `"retries": 5, "backoff_sec": 5`
+
+**Insufficient Storage**
+```
+Error: no space left on device
+```
+**Solutions:**
+- Check free space:
+  ```python
+  import os
+  stat = os.statvfs('/')
+  free_kb = (stat[0] * stat[3]) / 1024
+  print(f"Free: {free_kb} KB")
+  ```
+- Delete old files/logs
+- Exclude large files: `"ignore": ["data/", "*.bmp"]`
+
+### Debug Mode
+
+Enable verbose logging to diagnose issues:
+
+```json
+{
+  "debug": true
+}
+```
+
+This shows:
+- WiFi connection details (SSID, RSSI, IP)
+- GitHub API requests/responses
+- File download progress
+- Memory usage
+- Detailed error messages
+
+### Status LED Patterns (Headless Mode)
+
+If using `status_led_pin`:
+
+| Pattern | Meaning | Action |
+|---------|---------|--------|
+| 2 quick blinks | WiFi connecting | Wait 10-30s |
+| Solid ON | Connected/processing | Normal |
+| Brief pulses | Downloading | Normal |
+| 3 quick blinks | Update successful | Will reboot |
+| Long blink (500ms) | **Error** | Check logs |
+
+### Check Logs
+
+**View errors:**
+```python
+import json
+try:
+    with open('ota_error.json') as f:
+        print(json.load(f))
+except OSError:
+    print("No errors logged")
+```
+
+**Check version:**
+```python
+try:
+    with open('version.json') as f:
+        print(json.load(f))
+except OSError:
+    print("No version yet")
+```
+
+### FAQ
+
+**Q: How often should devices check for updates?**
+A: Production: once per hour. Development: every boot.
+
+**Q: Can I update just one file?**
+A: Yes, use `"allow": ["main.py"]`
+
+**Q: What happens if power is lost during update?**
+A: Automatic rollback from `.ota_backup/` on next boot. No corruption.
+
+**Q: How much free space is needed?**
+A: At least 2× update size + 50KB overhead.
+
+**Q: Do I need a manifest for stable channel?**
+A: No, but strongly recommended for signature verification and better security.
+
+**Q: Can multiple devices update simultaneously?**
+A: Yes. Without token: ~10-20 devices/hour. With token: ~1000-2000 devices/hour.
+
+**Q: The device reboots but old code still runs?**
+A: Enable hard reset: `"reset_mode": "hard"`
+
+### Getting Help
+
+If still stuck:
+
+1. Enable `"debug": true` and capture full output
+2. Check GitHub Issues: https://github.com/ajmcardle/ota/issues
+3. Provide:
+   - MicroPython version: `import sys; print(sys.implementation.version)`
+   - Board type (e.g., "Raspberry Pi Pico W")
+   - Config file (redact passwords/tokens)
+   - Full error output
+   - Expected vs actual behavior
 
 ## License
 
