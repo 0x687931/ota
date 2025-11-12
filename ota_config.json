@@ -36,5 +36,9 @@
   "_force_comment": "Set true to force update even if versions match (optional)",
   "force": false,
   "_debug_comment": "Set true for verbose logging (optional)",
-  "debug": false
+  "debug": false,
+  "_max_tree_size_kb_comment": "Maximum Git tree response size in KB (optional, protects against OOM)",
+  "max_tree_size_kb": 100,
+  "_max_tree_files_comment": "Maximum number of files in Git tree (optional, protects against OOM)",
+  "max_tree_files": 250
 }
