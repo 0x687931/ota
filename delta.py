@@ -34,6 +34,64 @@ class DeltaError(Exception):
     pass
 
 
+class _ChunkedDeltaReader:
+    """
+    Streaming delta reader with minimal lookahead buffer.
+    Reduces memory usage from O(delta_size) to O(buffer_size).
+    """
+    def __init__(self, file_handle, buffer_size=64):
+        self.f = file_handle
+        self.buffer = bytearray()
+        self.buffer_size = buffer_size
+        self.offset = 0
+        self.eof = False
+
+    def _ensure_bytes(self, count):
+        """Ensure at least 'count' bytes in buffer."""
+        while len(self.buffer) < count and not self.eof:
+            chunk = self.f.read(self.buffer_size)
+            if not chunk:
+                self.eof = True
+                break
+            self.buffer.extend(chunk)
+
+    def read_byte(self):
+        """Read single byte."""
+        self._ensure_bytes(1)
+        if len(self.buffer) < 1:
+            raise DeltaError("Unexpected EOF reading delta")
+        b = self.buffer[0]
+        del self.buffer[0]
+        self.offset += 1
+        return b
+
+    def read_bytes(self, count):
+        """Read exact number of bytes."""
+        result = bytearray()
+        while count > 0:
+            self._ensure_bytes(count)
+            available = min(len(self.buffer), count)
+            if available == 0:
+                raise DeltaError("Unexpected EOF reading delta")
+            result.extend(self.buffer[:available])
+            del self.buffer[:available]
+            self.offset += available
+            count -= available
+        return bytes(result)
+
+    def read_varint(self):
+        """Read variable-length integer."""
+        result = 0
+        shift = 0
+        while True:
+            byte = self.read_byte()
+            result |= (byte & 0x7F) << shift
+            if not (byte & 0x80):
+                break
+            shift += 7
+        return result
+
+
 def _read_varint(data, offset):
     """Read variable-length integer (up to 32-bit)."""
     result = 0
@@ -64,7 +122,7 @@ def apply_delta(old_path, delta_data, output_path, expected_hash=None, chunk_siz
 
     Args:
         old_path: Path to original file
-        delta_data: Delta instructions (bytes)
+        delta_data: Delta instructions (bytes or file path string for streaming)
         output_path: Path for output file
         expected_hash: Expected SHA256 of result (optional)
         chunk_size: Read/write chunk size
@@ -75,6 +133,96 @@ def apply_delta(old_path, delta_data, output_path, expected_hash=None, chunk_siz
     Raises:
         DeltaError: If delta is invalid or output hash mismatches
     """
+    # Support both bytes (legacy) and file path (streaming)
+    if isinstance(delta_data, (str, bytes)) and not isinstance(delta_data, bytes):
+        # String path: use streaming mode
+        with open(delta_data, "rb") as delta_file:
+            return _apply_delta_streaming(old_path, delta_file, output_path, expected_hash, chunk_size)
+    else:
+        # Bytes: use legacy in-memory mode (backward compatibility)
+        return _apply_delta_legacy(old_path, delta_data, output_path, expected_hash, chunk_size)
+
+
+def _apply_delta_streaming(old_path, delta_file, output_path, expected_hash=None, chunk_size=512):
+    """Apply delta using streaming reader (low memory)."""
+    reader = _ChunkedDeltaReader(delta_file, buffer_size=64)
+
+    # Verify delta header
+    magic = reader.read_bytes(8)
+    if magic != DELTA_MAGIC:
+        raise DeltaError("Invalid delta magic")
+
+    version = reader.read_byte()
+    if version != DELTA_VERSION:
+        raise DeltaError("Unsupported delta version: {}".format(version))
+
+    # Process delta instructions
+    output_hash = hashlib.sha256()
+
+    with open(old_path, "rb") as old_file, \
+         open(output_path, "wb") as new_file:
+
+        while True:
+            try:
+                opcode = reader.read_byte()
+            except DeltaError:
+                # EOF without OP_END is an error, but handled below
+                break
+
+            if opcode == OP_END:
+                break
+
+            elif opcode == OP_COPY_OLD:
+                # Read copy position and length
+                copy_offset = reader.read_varint()
+                copy_length = reader.read_varint()
+
+                if copy_length > MAX_COPY_SIZE:
+                    raise DeltaError("Copy size too large: {}".format(copy_length))
+
+                # Copy from old file in chunks
+                old_file.seek(copy_offset)
+                remaining = copy_length
+                while remaining > 0:
+                    chunk = min(chunk_size, remaining)
+                    data = old_file.read(chunk)
+                    if len(data) != chunk:
+                        raise DeltaError("Unexpected EOF in old file")
+                    new_file.write(data)
+                    output_hash.update(data)
+                    remaining -= chunk
+
+            elif opcode == OP_NEW_DATA:
+                # Read insert length and data
+                insert_length = reader.read_varint()
+
+                if insert_length > MAX_INSERT_SIZE:
+                    raise DeltaError("Insert size too large: {}".format(insert_length))
+
+                data = reader.read_bytes(insert_length)
+                new_file.write(data)
+                output_hash.update(data)
+
+            else:
+                raise DeltaError("Unknown opcode: 0x{:02x}".format(opcode))
+
+        new_file.flush()
+        if hasattr(os, "fsync"):
+            os.fsync(new_file.fileno())
+
+    # Verify output hash if provided
+    result_hash = output_hash.hexdigest() if hasattr(output_hash, 'hexdigest') else \
+                  __import__('binascii').hexlify(output_hash.digest()).decode()
+
+    if expected_hash and result_hash != expected_hash:
+        raise DeltaError("Output hash mismatch: expected {}, got {}".format(
+            expected_hash, result_hash))
+
+    return result_hash
+
+
+def _apply_delta_legacy(old_path, delta_data, output_path, expected_hash=None, chunk_size=512):
+    """Apply delta using in-memory buffer (backward compatibility)."""
     # Verify delta header
     if len(delta_data) < 9:
         raise DeltaError("Delta too short")

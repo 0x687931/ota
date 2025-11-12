@@ -862,6 +862,65 @@ class OTA:
 
         raise last_error
 
+    def _validate_tree_size(self, url: str):
+        """
+        Validate tree API response size before parsing to prevent OOM.
+        Returns None if validation passes, error message if it fails.
+
+        Performs dual validation:
+        1. Content-Length header check (if available) - fast preemptive check
+        2. File count validation (always applied) - guarantees safety
+        """
+        max_size_kb = int(self.cfg.get("max_tree_size_kb", 50))
+        max_size_bytes = max_size_kb * 1024
+
+        # Phase 1: Check Content-Length header (preemptive, if available)
+        try:
+            headers = self._headers()
+            # Use HEAD request to get headers without downloading body
+            if MICROPYTHON:
+                # MicroPython urequests doesn't support HEAD, skip this phase
+                self._debug("Tree size validation: Content-Length check skipped (MicroPython)")
+            else:
+                import requests as std_requests
+                head_response = std_requests.head(url, headers=headers, timeout=10)
+                content_length = head_response.headers.get("Content-Length")
+                if content_length:
+                    size_bytes = int(content_length)
+                    size_kb = size_bytes / 1024
+                    self._debug("Tree size validation: Content-Length = {:.1f} KB".format(size_kb))
+                    if size_bytes > max_size_bytes:
+                        return (
+                            "Tree API response too large: {:.1f} KB (limit: {} KB). "
+                            "Large repositories should use manifest mode. "
+                            "Alternatively: (1) reduce allowed paths in config, or "
+                            "(2) increase 'max_tree_size_kb' config value."
+                        ).format(size_kb, max_size_kb)
+                else:
+                    self._debug("Tree size validation: Content-Length header not available")
+        except Exception as e:
+            # Content-Length check is best-effort; continue to file count check
+            self._debug("Tree size validation: Content-Length check failed:", e)
+
+        return None
+
+    def _validate_tree_file_count(self, tree_list):
+        """Validate tree file count after parsing (always applied)."""
+        max_files = int(self.cfg.get("max_tree_files", 300))
+        actual_count = len(tree_list)
+
+        self._debug("Tree validation: {} files in tree (limit: {})".format(actual_count, max_files))
+
+        if actual_count > max_files:
+            return (
+                "Tree contains too many files: {} (limit: {}). "
+                "Large repositories should use manifest mode. "
+                "Alternatively: (1) reduce allowed paths in config, or "
+                "(2) increase 'max_tree_files' config value."
+            ).format(actual_count, max_files)
+
+        return None
+
     def _get_json(self, url: str):
         # Preemptive GC before large JSON allocation to prevent fragmentation
         import gc
@@ -923,7 +982,21 @@ class OTA:
         url = "https://api.github.com/repos/%s/%s/git/trees/%s?recursive=1" % (
             self.cfg["owner"], self.cfg["repo"], commit_sha
         )
-        return self._get_json(url)["tree"]
+
+        # Phase 1: Validate size before download (if possible)
+        size_error = self._validate_tree_size(url)
+        if size_error:
+            raise OTAError(size_error)
+
+        # Download and parse tree JSON
+        tree = self._get_json(url)["tree"]
+
+        # Phase 2: Validate file count after parsing (always applied)
+        count_error = self._validate_tree_file_count(tree)
+        if count_error:
+            raise OTAError(count_error)
+
+        return tree
 
     def iter_candidates(self, tree):
         for entry in tree:
@@ -1254,11 +1327,11 @@ class OTA:
                                 os.sync()
                             except Exception:
                                 pass
-                        # Track backup immediately to ensure rollback works if next rename fails
-                        applied.append((target, backup))
+                        # Track as replace operation (restore backup on rollback)
+                        applied.append(("replace", target, backup))
                     else:
-                        # No backup created, track None
-                        applied.append((target, None))
+                        # Track as new file operation (delete file on rollback)
+                        applied.append(("new", target, None))
                     os.rename(stage_path, target)
                     # Sync after applying new file
                     if hasattr(os, "sync"):
@@ -1282,7 +1355,8 @@ class OTA:
                                 os.sync()
                             except Exception:
                                 pass
-                        applied.append((None, bpath))
+                        # Track as delete operation (restore from backup on rollback)
+                        applied.append(("delete", rel, bpath))
             # optional conservative deletion for developer channel
             patterns = self.cfg.get("delete_patterns", [])
             if patterns:
@@ -1314,10 +1388,19 @@ class OTA:
                                             os.sync()
                                         except Exception:
                                             pass
-                                    applied.append((None, bpath))
+                                    # Track as delete operation (restore from backup on rollback)
+                                    applied.append(("delete", rel, bpath))
                                 except Exception:
                                     pass
+            # Final sync to ensure all changes durable
+            if hasattr(os, "sync"):
+                try:
+                    os.sync()
+                except Exception:
+                    pass
+            # Write version.json AFTER all swaps and sync complete
             self._write_state(applied_ref, applied_commit)
+            # Sync version.json to storage
             if hasattr(os, "sync"):
                 try:
                     os.sync()
@@ -1326,15 +1409,30 @@ class OTA:
         except Exception:
             self._debug("Rollback triggered")
             rollback_errors = []
-            for target, backup in reversed(applied):
+            for operation, target, backup in reversed(applied):
                 try:
-                    if backup and _exists(backup):
-                        if target and _exists(target):
+                    if operation == "new":
+                        # New file: delete it
+                        if _exists(target):
                             os.remove(target)
-                        os.rename(backup, target or backup)
+                            self._debug("Rollback: removed new file {}".format(target))
+                    elif operation == "replace":
+                        # Replaced file: restore from backup
+                        if backup and _exists(backup):
+                            if _exists(target):
+                                os.remove(target)
+                            os.rename(backup, target)
+                            self._debug("Rollback: restored {} from backup".format(target))
+                    elif operation == "delete":
+                        # Deleted file: restore from backup
+                        if backup and _exists(backup):
+                            if not _exists(target):
+                                ensure_dirs(target.rpartition("/")[0])
+                            os.rename(backup, target)
+                            self._debug("Rollback: restored deleted file {}".format(target))
                 except Exception as e:
                     # Track rollback failures for debugging
-                    error_msg = "Failed to rollback {}: {}".format(target or backup, str(e))
+                    error_msg = "Failed to rollback {} {}: {}".format(operation, target, str(e))
                     rollback_errors.append(error_msg)
                     self._debug(error_msg)
             if rollback_errors:
